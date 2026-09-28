@@ -1,0 +1,1 @@
+<template><view class="page-head"><view class="back" @click="back">‹</view><text>{{title}}</text><text class="head-mark">青禾</text></view></template><script setup>defineProps({title:String});function back(){const pages=getCurrentPages();pages.length>1?uni.navigateBack():uni.reLaunch({url:'/pages/home/index'})}</script>

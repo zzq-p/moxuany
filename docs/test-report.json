@@ -1,0 +1,31 @@
+{
+  "date": "2026-09-28T11:59:33.063Z",
+  "checks": [
+    "anonymous requests cannot access private orders or administration",
+    "RuoYi administrator sees all stores",
+    "merchant store/product/member/account access is isolated on the server",
+    "16 simultaneous identical requests create one order and reserve stock once; server computes price",
+    "idempotency payload mismatch and cross-customer order access are rejected",
+    "foreign address/coupon request rolls back without stock leakage",
+    "simulate payment → accept → deliver → complete; state transitions and loyalty credit are idempotent",
+    "100 concurrent buyers for 9 remaining portions: exactly 9 successes, zero overselling",
+    "8 concurrent cancellations restore stock exactly once",
+    "CSV import transaction rejects cross-store row and rolls back the whole batch",
+    "concurrent daily check-in awards points once",
+    "expired order cannot be paid",
+    "stale admin inventory update is rejected by optimistic version check"
+  ],
+  "concurrency": {
+    "requests": 100,
+    "stock": 9,
+    "success": 9,
+    "elapsedMs": 533
+  },
+  "catalog": {
+    "requests": 500,
+    "concurrency": 50,
+    "rps": 1557,
+    "p95Ms": 45
+  },
+  "limitations": "Local development smoke/load check, not a production capacity guarantee."
+}

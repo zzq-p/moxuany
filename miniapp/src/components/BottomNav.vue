@@ -1,0 +1,2 @@
+<template><view class="bottom-nav"><view v-for="tab in tabs" :key="tab.path" :class="['nav-item',{active:active===tab.id}]" @click="open(tab)"><text class="nav-icon">{{tab.icon}}</text><text>{{tab.label}}</text><view v-if="active===tab.id" class="nav-dot" /></view></view></template>
+<script setup>defineProps({active:String});const tabs=[{id:'home',label:'首页',icon:'⌂',path:'home/index'},{id:'orders',label:'订单',icon:'▤',path:'orders/index'},{id:'profile',label:'我的',icon:'♙',path:'profile/index'}];function open(tab){uni.reLaunch({url:'/pages/'+tab.path})}</script>

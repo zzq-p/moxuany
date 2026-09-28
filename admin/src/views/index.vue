@@ -1,0 +1,1 @@
+<template><Overview/></template><script setup>import Overview from './food/overview/index.vue'</script>

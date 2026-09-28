@@ -1,0 +1,38 @@
+server:
+  port: ${PORT:8080}
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 20
+ruoyi:
+  profile: ${FOOD_UPLOAD_PATH:./.runtime/uploads}
+spring:
+  datasource:
+    druid:
+      master:
+        url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:13306}/${MYSQL_DATABASE:moxuany}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia%2FShanghai
+        username: ${MYSQL_USER:moxuany}
+        password: ${MYSQL_PASSWORD}
+      maxActive: 40
+      minIdle: 5
+      maxWait: 3000
+      statViewServlet:
+        enabled: false
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:16379}
+      password: ${REDIS_PASSWORD:}
+      database: 1
+      timeout: 2s
+token:
+  secret: ${TOKEN_SECRET}
+logging:
+  level:
+    com.ruoyi: info
+food:
+  demo-enabled: ${FOOD_DEMO_ENABLED:false}
+  appid: ${WECHAT_APPID:}
+  secret: ${WECHAT_SECRET:}
+
+  baidu-map-ak: ${BAIDU_MAP_AK:}

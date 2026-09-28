@@ -1,0 +1,11 @@
+{
+  "date": "2026-09-28T11:59:14.241Z",
+  "checks": [
+    "merchant/store pagination: 23 fixtures → 20 + 3, no duplicates, tenant isolation and authentication",
+    "product pagination/filtering, literal wildcard search, product-to-store search, global distance order, compact info and invalid-query checks",
+    "invalid hours/radius rejected; closed orders blocked without stock loss; overnight and all-day schedules",
+    "saved shipping coordinates: inside accepted, outside/missing rejected, pickup exempt; cancelled reservations fully restored",
+    "alerts follow simulated payment → pending/overdue → accepted; scoped merchant positive/negative cases and anonymous access"
+  ],
+  "scope": "Local integration with isolated fixtures; synthetic WGS84 coordinates; not a production capacity guarantee."
+}

@@ -1,0 +1,39 @@
+name: moxuany
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: moxuany-mysql
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: moxuany
+      MYSQL_USER: moxuany
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+    ports: ["127.0.0.1:13306:3306"]
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./server/sql/ry_20260417.sql:/docker-entrypoint-initdb.d/01-ruoyi.sql:ro
+      - ./server/sql/quartz.sql:/docker-entrypoint-initdb.d/02-quartz.sql:ro
+      - ./database/03-food.sql:/docker-entrypoint-initdb.d/03-food.sql:ro
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci", "--max-connections=300", "--default-time-zone=+08:00"]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+    restart: unless-stopped
+  redis:
+    image: redis:8
+    container_name: moxuany-redis
+    ports: ["127.0.0.1:16379:6379"]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+volumes:
+  mysql-data:
+  redis-data:

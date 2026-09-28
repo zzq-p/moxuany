@@ -1,0 +1,26 @@
+**/node_modules/
+**/target/
+**/dist/
+**/.git/
+.runtime/
+.env
+.env.*
+!.env.example
+# These frontend files contain only public build settings.
+!admin/.env.development
+!admin/.env.production
+!admin/.env.staging
+!miniapp/.env.example
+**/*.local
+**/.idea/
+**/.vscode/
+**/logs/
+**/coverage/
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/project.private.config.json
+*.log
+**/unpackage/
+**/.DS_Store
