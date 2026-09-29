@@ -14,11 +14,11 @@ import static com.ruoyi.food.FoodSupport.*;
 @RestController
 @RequestMapping("/food/app")
 public class FoodController {
- private final JdbcTemplate db; private final FoodSupport support; private final FoodOrders orders; private final FoodMemberService members;
+ private final JdbcTemplate db; private final FoodSupport support; private final FoodOrders orders; private final FoodMemberService members;private final FoodRefunds refunds;
  @Value("${food.demo-enabled:false}") private boolean demo;
  @Value("${food.appid:}") private String appid;
  @Value("${food.secret:}") private String secret;
- public FoodController(JdbcTemplate db,FoodSupport support,FoodOrders orders,FoodMemberService members){this.db=db;this.support=support;this.orders=orders;this.members=members;}
+ public FoodController(JdbcTemplate db,FoodSupport support,FoodOrders orders,FoodMemberService members,FoodRefunds refunds){this.refunds=refunds;this.db=db;this.support=support;this.orders=orders;this.members=members;}
  @GetMapping("/config") public AjaxResult config(){return AjaxResult.success(Map.of("demoEnabled",demo,"brand","青禾校园"));}
  @PostMapping("/login") public AjaxResult login(@RequestBody Map<String,String> input,HttpServletRequest request){
    support.limit("login:"+request.getRemoteAddr(),30,60);
@@ -52,11 +52,11 @@ public class FoodController {
    return AjaxResult.success();
  }
  @DeleteMapping("/addresses/{id}") public AjaxResult deleteAddress(@PathVariable long id,HttpServletRequest r){db.update("DELETE FROM food_address WHERE id=? AND member_id=?",id,support.member(r));return AjaxResult.success();}
- @PostMapping("/orders") public AjaxResult create(@RequestBody FoodOrders.Checkout c,HttpServletRequest r){long id=support.member(r);support.limit("order:"+id,30,60);return AjaxResult.success(orders.create(id,c));}
+ @PostMapping("/orders") public AjaxResult create(@RequestBody FoodOrders.Checkout c,HttpServletRequest r){long id=support.member(r);support.limit("order:"+id,30,60);try{return AjaxResult.success(orders.create(id,c));}catch(com.ruoyi.common.exception.ServiceException e){return AjaxResult.warn(e.getMessage());}}
  @GetMapping("/orders") public AjaxResult list(@RequestParam(defaultValue="1") int page,@RequestParam(defaultValue="") String type,@RequestParam(defaultValue="") String status,HttpServletRequest r){
    long member=support.member(r);require(page>=1&&page<=10000,"页码超出允许范围");
    require(type.isEmpty()||Set.of("DELIVERY","PICKUP").contains(type),"无效的配送方式");
-   require(status.isEmpty()||Set.of("UNPAID","PENDING","PREPARING","DELIVERING","READY","COMPLETED","CANCELLED").contains(status),"无效的订单状态");
+   require(status.isEmpty()||Set.of("UNPAID","PENDING","PREPARING","WAITING_DELIVERY","DELIVERING","READY","COMPLETED","CANCELLED","REFUNDED").contains(status),"无效的订单状态");
    String filter=" WHERE o.member_id=?";List<Object> args=new ArrayList<>();args.add(member);
    if(!type.isEmpty()){filter+=" AND o.type=?";args.add(type);}
    if(!status.isEmpty()){filter+=" AND o.status=?";args.add(status);}
@@ -72,6 +72,8 @@ public class FoodController {
    }
    return AjaxResult.success(list);
  }
+ @GetMapping("/orders/by-request/{key}") public AjaxResult recover(@PathVariable String key,HttpServletRequest r){long member=support.member(r);require(key.matches("[A-Za-z0-9-]{16,80}"),"无效请求编号");var ids=db.queryForList("SELECT id FROM food_order WHERE member_id=? AND request_key=?",String.class,member,key);return AjaxResult.success(ids.isEmpty()?Map.of("found",false):Map.of("found",true,"order",orders.detail(member,ids.get(0))));}
+ @PostMapping("/orders/{id}/refund") public AjaxResult refund(@PathVariable String id,@RequestBody Map<String,String> body,HttpServletRequest r){require(demo,"当前仅支持模拟退款");refunds.request(support.member(r),id,body.get("reason"));return AjaxResult.success();}
  @GetMapping("/orders/{id}") public AjaxResult detail(@PathVariable String id,HttpServletRequest r){return AjaxResult.success(orders.detail(support.member(r),id));}
  @PostMapping("/orders/{id}/pay") public AjaxResult pay(@PathVariable String id,HttpServletRequest r){require(demo,"模拟支付未启用，真实支付尚未接入");orders.transition(id,support.member(r),"PENDING");return AjaxResult.success();}
  @PostMapping("/orders/{id}/cancel") public AjaxResult cancel(@PathVariable String id,HttpServletRequest r){orders.transition(id,support.member(r),"CANCELLED");return AjaxResult.success();}

@@ -1,1 +1,1 @@
-<template><Overview/></template><script setup>import Overview from './food/overview/index.vue'</script>
+<template><Delivery v-if="user.roles.includes('food_rider')"/><Overview v-else/></template><script setup>import Overview from './food/overview/index.vue';import Delivery from './food/delivery/index.vue';import useUserStore from '@/store/modules/user';const user=useUserStore()</script>

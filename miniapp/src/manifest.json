@@ -12,11 +12,12 @@
     "usingComponents": true,
     "permission": {
       "scope.userLocation": {
-        "desc": "用于显示所在城市并估算与商家的距离"
+        "desc": "用于选择收货点、显示所在城市和判断配送范围"
       }
     },
     "requiredPrivateInfos": [
-      "getLocation"
+      "getLocation",
+      "chooseLocation"
     ]
   },
   "h5": {

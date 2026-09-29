@@ -23,6 +23,6 @@ current=feed.reset({type:'DELIVERY',status:'PENDING'});requests[6].resolve([]);a
 assert.equal(state.error,'');assert.equal(state.hasMore,false)
 console.log('PASS order filters ignore old responses; duplicate load-more guarded; deduplication; hide cancels; retry recovers')
 const refreshed=reconcileCart([{id:1,price:100,quantity:3},{id:2,price:200,quantity:1},{id:3,price:300,quantity:1}], [{id:1,price:150,stock:2},{id:2,price:200,stock:0}])
-assert.equal(refreshed.changed,true);assert.deepEqual(refreshed.items,[{id:1,price:150,stock:2,quantity:2}])
+assert.equal(refreshed.changed,true);assert.deepEqual(refreshed.items.map(({id,price,stock,quantity})=>({id,price,stock,quantity})),[{id:1,price:150,stock:2,quantity:2}])
 const unchanged=reconcileCart([{id:1,price:150,quantity:1}],[{id:1,price:150,stock:2}]);assert.equal(unchanged.changed,false)
 console.log('PASS checkout refreshes current prices, caps quantity by stock, removes unavailable items')

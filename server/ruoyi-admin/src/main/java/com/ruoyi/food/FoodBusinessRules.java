@@ -18,8 +18,17 @@ public final class FoodBusinessRules {
     }
     public static boolean isOpen(Map<String,Object> store,LocalTime now) {
         if(number(store,"active")!=1)return false;
+        String periods=text(store,"business_periods");
+        if(!periods.isBlank()){for(String period:periods.split(",")){String[] p=period.split("-");if(within(p[0],p[1],now))return true;}return false;}
         String open=text(store,"open_time"),close=text(store,"close_time");
         if(open.isEmpty()&&close.isEmpty())return true;
+        return within(open,close,now);
+    }
+    public static void validatePeriods(String periods){
+        if(periods.isBlank())return;String[] entries=periods.split(",",-1);require(entries.length<=4,"最多设置4段营业时间");
+        for(String p:entries){String[] pair=p.split("-",-1);require(pair.length==2,"分段时间格式如07:00-10:00,11:00-14:00");validateHours(pair[0],pair[1]);require(!pair[0].isEmpty(),"时段不能为空");}
+    }
+    private static boolean within(String open,String close,LocalTime now){
         LocalTime start=LocalTime.parse(open),end=LocalTime.parse(close);
         return start.isBefore(end)?!now.isBefore(start)&&now.isBefore(end):!now.isBefore(start)||now.isBefore(end);
     }
@@ -27,6 +36,7 @@ public final class FoodBusinessRules {
         store.put("open_now",isOpen(store,LocalTime.now(ZoneId.of("Asia/Shanghai"))));
         String open=text(store,"open_time"),close=text(store,"close_time");
         store.put("opening_text",open.isEmpty()?"全天营业":open+"–"+(open.compareTo(close)>0?"次日 ":"")+close);
+        if(!text(store,"business_periods").isBlank())store.put("opening_text",text(store,"business_periods").replace(","," / "));
         return store;
     }
     public static void requireOpen(Map<String,Object> store) {

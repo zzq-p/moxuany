@@ -10,8 +10,8 @@ import static com.ruoyi.food.FoodSupport.*;
 
 @RestController
 public class FoodCatalogController {
-    private final JdbcTemplate db;private final FoodScope scope;
-    public FoodCatalogController(JdbcTemplate db,FoodScope scope){this.db=db;this.scope=scope;}
+    private final JdbcTemplate db;private final FoodScope scope;private final FoodOptions options;
+    public FoodCatalogController(JdbcTemplate db,FoodScope scope,FoodOptions options){this.options=options;this.db=db;this.scope=scope;}
     private int integer(Map<String,String> p,String key,int fallback,int max){try{int n=Integer.parseInt(p.getOrDefault(key,""+fallback));require(n>=1&&n<=max,"分页参数不合法");return n;}catch(NumberFormatException e){throw new com.ruoyi.common.exception.ServiceException("分页参数不合法");}}
     private String keyword(Map<String,String> p,String key){String s=p.getOrDefault(key,"").trim();require(s.length()<=80,"搜索内容过长");return s;}
     private String like(String s){return "%"+s.replace("!","!!").replace("%","!%").replace("_","!_")+"%";}
@@ -56,8 +56,9 @@ public class FoodCatalogController {
         String from=" FROM food_product p JOIN food_store s ON s.id=p.store_id";
         long count=db.queryForObject("SELECT COUNT(*)"+from+where,Long.class,a.toArray());a.add(size);a.add((page-1)*size);
         var rows=db.queryForList("SELECT p.*,s.name store_name"+from+where+" ORDER BY p.id "+(admin?"DESC":"ASC")+" LIMIT ? OFFSET ?",a.toArray());
-        return AjaxResult.success(Map.of("rows",rows,"total",count,"page",page,"pageSize",size));
+        options.attach(rows);return AjaxResult.success(Map.of("rows",rows,"total",count,"page",page,"pageSize",size));
     }
+    @Anonymous @GetMapping("/food/app/stores/{id}/slots") public AjaxResult slots(@PathVariable long id){var rows=db.queryForList("SELECT * FROM food_store WHERE id=? AND active=1",id);require(!rows.isEmpty(),"店铺已休息");return AjaxResult.success(FoodReservations.slots(rows.get(0)));}
     @Anonymous @GetMapping("/food/app/catalog/zones") public AjaxResult zones(){return AjaxResult.success(db.queryForList("SELECT DISTINCT zone FROM food_store WHERE active=1 ORDER BY zone",String.class));}
     @Anonymous @GetMapping("/food/app/stores/{id}/info") public AjaxResult info(@PathVariable long id){
         var rows=db.queryForList("SELECT * FROM food_store WHERE id=? AND active=1",id);require(!rows.isEmpty(),"商家不存在或休息中");var store=FoodBusinessRules.decorate(rows.get(0));
