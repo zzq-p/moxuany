@@ -1,13 +1,17 @@
 {
- "name":"qinghe-campus-ordering","private":true,"version":"1.0.0",
- "scripts":{
-  "start":"powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start.ps1",
-  "dev:miniapp":"npm run dev:h5 --prefix miniapp",
-  "dev:admin":"npm run dev --prefix admin",
-  "dev:server":"powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-backend.ps1",
-  "build:miniapp":"npm run build:mp-weixin --prefix miniapp",
-  "build:h5":"npm run build:h5 --prefix miniapp",
-  "build:admin":"npm run build:prod --prefix admin",
-  "test:integration":"node scripts/test-integration.cjs"
- }
+  "name": "qinghe-campus-ordering",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start.ps1",
+    "dev:miniapp": "npm run dev:h5 --prefix miniapp",
+    "dev:admin": "npm run dev --prefix admin",
+    "dev:server": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-backend.ps1",
+    "build:miniapp": "npm run build:mp-weixin --prefix miniapp",
+    "build:h5": "npm run build:h5 --prefix miniapp",
+    "build:admin": "npm run build:prod --prefix admin",
+    "test:integration": "node scripts/test-integration.cjs",
+    "test:fulfillment": "node scripts/test-fulfillment.cjs",
+    "test:experience": "node scripts/test-experience.cjs"
+  }
 }

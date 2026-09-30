@@ -21,6 +21,7 @@ export const toast=title=>uni.showToast({title,icon:'none'})
 export const confirm=content=>new Promise(resolve=>uni.showModal({title:'温馨提示',content,success:r=>resolve(r.confirm)}))
 export const statuses={UNPAID:'待支付',PENDING:'待接单',PREPARING:'制作中',DELIVERING:'配送中',READY:'待取餐',COMPLETED:'已完成',CANCELLED:'已取消',REFUNDED:'已退款',WAITING_DELIVERY:'待骑手接单'}
 export const cart=reactive(uni.getStorageSync('food-cart')||{storeId:null,items:[]})
-export function saveCart(){uni.setStorageSync('food-cart',{storeId:cart.storeId,items:cart.items})}
-export function clearCart(){cart.storeId=null;cart.items=[];saveCart()}
+export function saveCart(){uni.setStorageSync('food-cart',{storeId:cart.storeId,items:cart.items,scheduledAt:cart.scheduledAt||''})}
+export function clearCart(){cart.storeId=null;cart.items=[];cart.scheduledAt='';saveCart()}
+export function uploadEvidence(orderId,filePath){return new Promise((resolve,reject)=>uni.uploadFile({url:base+'/food/app/orders/'+orderId+'/evidence',filePath,name:'file',header:{'X-Food-Token':state.token},success:r=>{try{const data=JSON.parse(r.data);if(data.code!==200)throw Error(data.msg||'上传失败');resolve(data.data)}catch(e){reject(e)}},fail:()=>reject(Error('图片上传失败，请重试'))}))}
 export function key(){return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)+'-'+Math.random().toString(36).slice(2)}

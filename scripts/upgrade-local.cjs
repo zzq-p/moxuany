@@ -22,4 +22,28 @@ sql(require('node:fs').readFileSync(require('node:path').join(__dirname,'../data
 for(const [name,type] of [['rider_id','BIGINT NULL'],['rider_claimed_at','DATETIME NULL']])if(!sql("SHOW COLUMNS FROM food_order LIKE '"+name+"'"))sql('ALTER TABLE food_order ADD COLUMN '+name+' '+type);
 if(!sql("SHOW INDEX FROM food_order WHERE Key_name='idx_order_rider'"))sql('ALTER TABLE food_order ADD INDEX idx_order_rider(rider_id,status,created_at,id)');
 for(const [name,columns] of [['idx_order_report_day','created_at,store_id'],['idx_order_store_day','store_id,created_at']])if(!sql("SHOW INDEX FROM food_order WHERE Key_name='"+name+"'"))sql('ALTER TABLE food_order ADD INDEX '+name+'('+columns+')');
+sql(require('node:fs').readFileSync(require('node:path').join(__dirname,'../database/06-fulfillment.sql'),'utf8'));
+for(const [table,name,type] of [
+ ['food_store','slot_limit','INT NOT NULL DEFAULT 20'],
+ ['food_order','stock_date','DATE NULL'],['food_order','slot_reserved','TINYINT NOT NULL DEFAULT 0'],
+ ['food_order','delivery_waiting_at','DATETIME NULL'],['food_order','delivery_version','BIGINT NOT NULL DEFAULT 0'],['food_order','delivery_issue',"VARCHAR(500) NOT NULL DEFAULT ''"],
+ ['food_order','pickup_verified_at','DATETIME NULL'],['food_order','pickup_verified_by','BIGINT NULL'],
+ ['food_rider_user','max_active','INT NOT NULL DEFAULT 5'],
+ ['food_review','reply',"VARCHAR(500) NOT NULL DEFAULT ''"],['food_review','replied_at','DATETIME NULL'],['food_review','replied_by','BIGINT NULL']
+])if(!sql("SHOW COLUMNS FROM "+table+" LIKE '"+name+"'"))sql('ALTER TABLE '+table+' ADD COLUMN '+name+' '+type);
+if(!sql("SHOW INDEX FROM food_order WHERE Key_name='idx_delivery_waiting'"))sql('ALTER TABLE food_order ADD INDEX idx_delivery_waiting(status,delivery_waiting_at,store_id)');
+if(!sql("SELECT COUNT(*) FROM food_feature_migration WHERE name='fulfillment-v1'").match(/^1$/)){
+ sql("START TRANSACTION; INSERT INTO food_reservation_slot(store_id,scheduled_at,used) SELECT store_id,scheduled_at,COUNT(*) FROM food_order WHERE scheduled_at IS NOT NULL AND status NOT IN ('CANCELLED','REFUNDED') GROUP BY store_id,scheduled_at ON DUPLICATE KEY UPDATE used=VALUES(used); UPDATE food_order SET slot_reserved=1 WHERE scheduled_at IS NOT NULL AND status NOT IN ('CANCELLED','REFUNDED'); UPDATE food_order SET delivery_waiting_at=updated_at WHERE status='WAITING_DELIVERY'; UPDATE food_store s SET rating=COALESCE((SELECT ROUND(AVG(r.rating),1) FROM food_review r WHERE r.store_id=s.id),0); INSERT INTO food_feature_migration(name) VALUES('fulfillment-v1'); COMMIT;");
+}
+sql(require('node:fs').readFileSync(require('node:path').join(__dirname,'../database/07-service-experience.sql'),'utf8'));
+for(const [table,name,type] of [
+ ['food_store','kitchen_capacity','INT NOT NULL DEFAULT 3'],['food_store','cooking_minutes','INT NOT NULL DEFAULT 15'],
+ ['food_product','sale_periods',"VARCHAR(200) NOT NULL DEFAULT ''"],['food_product','sold_out','TINYINT NOT NULL DEFAULT 0'],['food_product','sold_out_until','DATETIME NULL'],
+ ['food_order','preparing_at','DATETIME NULL'],['food_order','promised_ready_at','DATETIME NULL'],['food_order','refunded_amount','INT NOT NULL DEFAULT 0'],
+ ['food_order_item','refunded_quantity','INT NOT NULL DEFAULT 0'],['food_refund','kind',"VARCHAR(10) NOT NULL DEFAULT 'FULL'"],
+ ['food_store_user','staff_role',"VARCHAR(20) NOT NULL DEFAULT 'MANAGER'"],['food_store_user','active','TINYINT NOT NULL DEFAULT 1']
+])if(!sql("SHOW COLUMNS FROM "+table+" LIKE '"+name+"'"))sql('ALTER TABLE '+table+' ADD COLUMN '+name+' '+type);
+if(!sql("SELECT COUNT(*) FROM food_feature_migration WHERE name='service-experience-v1'").match(/^1$/)){
+ sql("START TRANSACTION; UPDATE food_order SET refunded_amount=total WHERE status='REFUNDED'; UPDATE food_order_item i JOIN food_order o ON o.id=i.order_id SET i.refunded_quantity=i.quantity WHERE o.status='REFUNDED'; UPDATE food_order SET preparing_at=updated_at WHERE status='PREPARING'; INSERT INTO food_feature_migration(name) VALUES('service-experience-v1'); COMMIT;");
+}
 console.log('Local schema is current');

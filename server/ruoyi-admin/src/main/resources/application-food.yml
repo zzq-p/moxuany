@@ -34,5 +34,7 @@ food:
   demo-enabled: ${FOOD_DEMO_ENABLED:false}
   appid: ${WECHAT_APPID:}
   secret: ${WECHAT_SECRET:}
+  subscriptions-enabled: ${FOOD_SUBSCRIPTIONS_ENABLED:false}
+  message-environment: ${FOOD_MESSAGE_ENVIRONMENT:formal}
 
   baidu-map-ak: ${BAIDU_MAP_AK:}

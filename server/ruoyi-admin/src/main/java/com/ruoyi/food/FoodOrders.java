@@ -11,7 +11,9 @@ import static com.ruoyi.food.FoodSupport.*;
 @Service
 public class FoodOrders {
     private final JdbcTemplate db;
-    public FoodOrders(JdbcTemplate db) {this.db=db;}
+    private final FoodReservationStock reservations;
+    private final FoodKitchen kitchen;private final FoodMessages messages;
+    public FoodOrders(JdbcTemplate db,FoodReservationStock reservations,FoodKitchen kitchen,FoodMessages messages) {this.db=db;this.reservations=reservations;this.kitchen=kitchen;this.messages=messages;}
     public record Line(long productId,int quantity,Long specId,List<Long> addonIds) {}
     public record Checkout(long storeId,String type,Long addressId,Long couponId,String remark,String requestKey,List<Line> items,Integer expectedTotal,String scheduledAt) {}
     private String fingerprint(Checkout c,Object items) {
@@ -44,7 +46,10 @@ public class FoodOrders {
         Map<String,Object> store=stores.get(0);
         var scheduled=FoodReservations.parse(store,c.scheduledAt());
         if(scheduled==null)FoodBusinessRules.requireOpen(store);
-        else db.update("UPDATE food_order SET scheduled_at=?,prepare_at=? WHERE id=?",scheduled,scheduled.minusMinutes(number(store,"lead_minutes")),id);
+        else {
+            reservations.reserveSlot(store,scheduled);
+            db.update("UPDATE food_order SET scheduled_at=?,prepare_at=?,stock_date=?,slot_reserved=1 WHERE id=?",scheduled,scheduled.minusMinutes(number(store,"lead_minutes")),scheduled.toLocalDate(),id);
+        }
         String address="到店自取";
         if(c.type().equals("DELIVERY")) {
             List<Map<String,Object>> addresses=db.queryForList("SELECT * FROM food_address WHERE id=? AND member_id=?",c.addressId(),member);
@@ -57,13 +62,15 @@ public class FoodOrders {
             List<Map<String,Object>> products=db.queryForList("SELECT * FROM food_product WHERE id=? AND store_id=? FOR UPDATE",entry.productId(),c.storeId());
             require(!products.isEmpty(),"商品不属于当前商家");
             Map<String,Object> p=products.get(0); int quantity=entry.quantity();
-            require(db.update("UPDATE food_product SET stock=stock-?,version=version+1 WHERE id=? AND stock>=? AND active=1",quantity,entry.productId(),quantity)==1,text(p,"name")+"库存不足或已下架");
+            FoodSelling.requireAvailable(p,scheduled==null?FoodSelling.now():scheduled);
+            if(scheduled!=null)reservations.take(entry.productId(),0,scheduled.toLocalDate(),quantity);
+            else require(db.update("UPDATE food_product SET stock=stock-?,version=version+1 WHERE id=? AND stock>=? AND active=1",quantity,entry.productId(),quantity)==1,text(p,"name")+"库存不足或已下架");
             var options=db.queryForList("SELECT * FROM food_product_option WHERE product_id=? AND active=1 ORDER BY id FOR UPDATE",entry.productId());
             boolean hasSpecs=options.stream().anyMatch(o->"SPEC".equals(o.get("kind")));require(!hasSpecs||entry.specId()!=null,"请选择菜品规格");
             TreeSet<Long> selected=new TreeSet<>(entry.addonIds());if(entry.specId()!=null)require(selected.add(entry.specId()),"规格与加料不能重复");
             int price=Math.toIntExact(number(p,"price"));List<String> labels=new ArrayList<>();
             if(entry.specId()!=null){var spec=options.stream().filter(o->number(o,"id")==entry.specId()&&"SPEC".equals(o.get("kind"))).findFirst();require(spec.isPresent(),"所选规格已下架或不属于本菜品");price=Math.toIntExact(number(spec.get(),"price"));}
-            for(long optionId:selected){var chosen=options.stream().filter(o->number(o,"id")==optionId).findFirst();require(chosen.isPresent(),"所选加料已下架或不属于本菜品");var o=chosen.get();if(!Objects.equals(entry.specId(),optionId)){require("ADDON".equals(o.get("kind")),"加料类型不正确");price=Math.addExact(price,Math.toIntExact(number(o,"price")));}labels.add(text(o,"name"));require(db.update("UPDATE food_product_option SET stock=stock-?,version=version+1 WHERE id=? AND stock>=? AND active=1",quantity,optionId,quantity)==1,"规格或加料库存不足");}
+            for(long optionId:selected){var chosen=options.stream().filter(o->number(o,"id")==optionId).findFirst();require(chosen.isPresent(),"所选加料已下架或不属于本菜品");var o=chosen.get();if(!Objects.equals(entry.specId(),optionId)){require("ADDON".equals(o.get("kind")),"加料类型不正确");price=Math.addExact(price,Math.toIntExact(number(o,"price")));}labels.add(text(o,"name"));if(scheduled!=null)reservations.take(entry.productId(),optionId,scheduled.toLocalDate(),quantity);else require(db.update("UPDATE food_product_option SET stock=stock-?,version=version+1 WHERE id=? AND stock>=? AND active=1",quantity,optionId,quantity)==1,"规格或加料库存不足");}
             long sum=(long)subtotal+(long)price*quantity;require(sum<=100000000,"订单金额过大，请分开下单");subtotal=(int)sum;
             db.update("INSERT INTO food_order_item(order_id,product_id,name,image,price,quantity,option_ids,option_text) VALUES(?,?,?,?,?,?,?,?)",id,entry.productId(),p.get("name"),p.get("image"),price,quantity,String.join(",",selected.stream().map(Object::toString).toList()),String.join(" / ",labels));
         }
@@ -87,23 +94,58 @@ public class FoodOrders {
         require(!list.isEmpty(),"订单不存在");
         Map<String,Object> result=list.get(0);
         result.put("items",db.queryForList("SELECT * FROM food_order_item WHERE order_id=?",id));
-        result.put("refunds",db.queryForList("SELECT * FROM food_refund WHERE order_id=? ORDER BY requested_at DESC,id DESC",id));
+        var refunds=db.queryForList("SELECT * FROM food_refund WHERE order_id=? ORDER BY requested_at DESC,id DESC",id);
+        for(var refund:refunds){refund.put("items",db.queryForList("SELECT r.item_id,r.quantity,r.amount,i.name FROM food_refund_item r JOIN food_order_item i ON i.id=r.item_id WHERE refund_id=?",refund.get("id")));refund.put("evidenceIds",db.queryForList("SELECT evidence_id FROM food_refund_evidence WHERE refund_id=?",String.class,refund.get("id")));}result.put("refunds",refunds);
+        kitchen.attach(result);
+        var reviews=db.queryForList("SELECT rating,content,created_at,reply,replied_at FROM food_review WHERE order_id=?",id);
+        result.put("review",reviews.isEmpty()?null:reviews.get(0));
+        result.put("events",db.queryForList("SELECT action,actor_name,note,created_at FROM food_order_event WHERE order_id=? ORDER BY id",id));
         return result;
     }
     void restore(Map<String,Object> order){
+        if(number(order,"slot_reserved")==1){
+            require(db.update("UPDATE food_reservation_slot SET used=used-1 WHERE store_id=? AND scheduled_at=? AND used>0",order.get("store_id"),order.get("scheduled_at"))==1,"预约时段记录异常");
+            db.update("UPDATE food_order SET slot_reserved=0 WHERE id=?",order.get("id"));
+        }
         for(var item:db.queryForList("SELECT * FROM food_order_item WHERE order_id=? ORDER BY product_id,id",order.get("id"))){
-            db.update("UPDATE food_product SET stock=stock+?,version=version+1 WHERE id=?",item.get("quantity"),item.get("product_id"));
-            if(!text(item,"option_ids").isEmpty())for(String option:text(item,"option_ids").split(","))db.update("UPDATE food_product_option SET stock=stock+?,version=version+1 WHERE id=?",item.get("quantity"),Long.parseLong(option));
+            restoreItem(order,item,(int)(number(item,"quantity")-number(item,"refunded_quantity")));
         }
         db.update("UPDATE food_coupon SET used_order=NULL WHERE used_order=?",order.get("id"));
     }
+    void restoreItem(Map<String,Object> order,Map<String,Object> item,int quantity){
+        if(quantity<=0)return;db.queryForMap("SELECT id FROM food_product WHERE id=? FOR UPDATE",item.get("product_id"));
+        if(order.get("stock_date")!=null)reservations.restore(number(item,"product_id"),0,order.get("stock_date"),quantity);
+        else db.update("UPDATE food_product SET stock=stock+?,version=version+1 WHERE id=?",quantity,item.get("product_id"));
+        if(!text(item,"option_ids").isEmpty())for(String option:text(item,"option_ids").split(",")){
+            if(order.get("stock_date")!=null)reservations.restore(number(item,"product_id"),Long.parseLong(option),order.get("stock_date"),quantity);
+            else db.update("UPDATE food_product_option SET stock=stock+?,version=version+1 WHERE id=?",quantity,Long.parseLong(option));
+        }
+    }
     @Transactional
     public void transition(String id,Long member,String target) {
+        transitionInternal(id,member,target,false);
+    }
+    @Transactional public void verifyPickup(String id,String code){
+        var rows=db.queryForList("SELECT * FROM food_order WHERE id=? FOR UPDATE",id);require(!rows.isEmpty(),"订单不存在");var order=rows.get(0);
+        require("PICKUP".equals(order.get("type")),"只有自取订单可核销");
+        require(code!=null&&code.matches("[0-9]{6}")&&code.equals(order.get("pickup_code")),"取餐码不正确");
+        if("COMPLETED".equals(order.get("status"))&&order.get("pickup_verified_at")!=null)return;
+        require("READY".equals(order.get("status")),"餐品尚未备好或订单已结束");
+        transitionInternal(id,null,"COMPLETED",true);
+        db.update("UPDATE food_order SET pickup_verified_at=NOW(),pickup_verified_by=? WHERE id=?",com.ruoyi.common.utils.SecurityUtils.getUserId(),id);
+        event(id,"PICKUP_VERIFIED","商家验码取餐");
+    }
+    void event(String id,String action,String note){db.update("INSERT INTO food_order_event(order_id,action,actor_id,actor_name,note) VALUES(?,?,?,?,?)",id,action,com.ruoyi.common.utils.SecurityUtils.getUserId(),com.ruoyi.common.utils.SecurityUtils.getUsername(),note);}
+    private void transitionInternal(String id,Long member,String target,boolean pickupVerified) {
         List<Map<String,Object>> rows=db.queryForList("SELECT *,expires_at<=NOW() expired FROM food_order WHERE id=? FOR UPDATE",id);
         require(!rows.isEmpty(),"订单不存在"); Map<String,Object> order=rows.get(0);
         require(member==null || number(order,"member_id")==member,"订单不存在");
         String status=text(order,"status");
         if(status.equals(target)) return;
+        if(target.equals("COMPLETED")){
+            require(!"PICKUP".equals(order.get("type"))||pickupVerified,"请由商家输入取餐码核销");
+            require(text(order,"delivery_issue").isEmpty(),"配送异常尚未处理，请联系平台");
+        }
         require(!"REQUESTED".equals(order.get("refund_status")),"请先处理退款申请");
         if(target.equals("PREPARING"))require(order.get("prepare_at")==null||!java.time.LocalDateTime.parse(order.get("prepare_at").toString().replace(" ","T")).isAfter(java.time.LocalDateTime.now(FoodReservations.ZONE)),"预约单尚未到备餐时间");
         boolean expired=((Number)order.get("expired")).intValue()==1;
@@ -115,13 +157,17 @@ public class FoodOrders {
             require(member==null || target.equals("COMPLETED"),"无权操作订单状态");
         }
         db.update("UPDATE food_order SET status=?,paid_at=IF(?='PENDING',NOW(),paid_at),completed_at=IF(?='COMPLETED',NOW(),completed_at) WHERE id=?",target,target,target,id);
+        if(target.equals("PENDING"))kitchen.promise(id,number(order,"store_id"));
+        if(target.equals("PREPARING")){db.update("UPDATE food_order SET preparing_at=NOW() WHERE id=?",id);messages.enqueue(id,"ACCEPTED",target,"商家已接单制作",number(order,"total")-number(order,"refunded_amount"));}
+        if(Set.of("READY","WAITING_DELIVERY","DELIVERING").contains(target)&&status.equals("PREPARING"))messages.enqueue(id,"READY","READY",target.equals("READY")?"餐品已好请取餐":"餐品出餐待配送",number(order,"total")-number(order,"refunded_amount"));
+        if(target.equals("WAITING_DELIVERY"))db.update("UPDATE food_order SET delivery_waiting_at=NOW() WHERE id=?",id);
         if(target.equals("CANCELLED")) {
             restore(order);
         }
         if(target.equals("COMPLETED")) {
-            db.update("UPDATE food_member SET points=points+? WHERE id=?",number(order,"total")/100,order.get("member_id"));
+            db.update("UPDATE food_member SET points=points+? WHERE id=?",(number(order,"total")-number(order,"refunded_amount"))/100,order.get("member_id"));
             db.update("UPDATE food_store SET sales=sales+1 WHERE id=?",order.get("store_id"));
-            for(Map<String,Object> item:db.queryForList("SELECT * FROM food_order_item WHERE order_id=? ORDER BY product_id",id)) db.update("UPDATE food_product SET sales=sales+? WHERE id=?",item.get("quantity"),item.get("product_id"));
+            for(Map<String,Object> item:db.queryForList("SELECT * FROM food_order_item WHERE order_id=? ORDER BY product_id",id)) db.update("UPDATE food_product SET sales=sales+? WHERE id=?",number(item,"quantity")-number(item,"refunded_quantity"),item.get("product_id"));
         }
     }
 }

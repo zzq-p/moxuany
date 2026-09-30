@@ -1,0 +1,17 @@
+{
+  "date": "2026-09-30",
+  "scope": "Local browser acceptance with an isolated store, customer, two riders and simulated payment. No WeChat real-device acceptance.",
+  "orderId": "MX19ef657cf967461fab8d110a3be48a02",
+  "checks": [
+    "Platform header and order list show the unclaimed delivery timeout alert.",
+    "Rider 1 claims the order and sees the delivery address in My Deliveries.",
+    "Rider 1 reports a vehicle fault; completion is disabled and platform sees the exception.",
+    "Platform reassigns to rider 2 with a handover reason; the exception clears.",
+    "Rider 1 refreshes My Deliveries and no longer sees the order.",
+    "Rider 2 logs in, sees the reassigned order, confirms delivery and sees Completed in delivery history.",
+    "Platform order details and database confirm Completed, rider 118 and four audit events with actors and timestamps."
+  ],
+  "auditActions": ["DELIVERY_CLAIM", "DELIVERY_ISSUE", "DELIVERY_REASSIGN", "DELIVERY_COMPLETE"],
+  "screenshot": "delivery-closure-preview.png",
+  "fixturesCleaned": true
+}

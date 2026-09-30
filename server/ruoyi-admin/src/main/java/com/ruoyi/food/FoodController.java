@@ -14,11 +14,11 @@ import static com.ruoyi.food.FoodSupport.*;
 @RestController
 @RequestMapping("/food/app")
 public class FoodController {
- private final JdbcTemplate db; private final FoodSupport support; private final FoodOrders orders; private final FoodMemberService members;private final FoodRefunds refunds;
+ private final JdbcTemplate db; private final FoodSupport support; private final FoodOrders orders; private final FoodMemberService members;private final FoodRefunds refunds;private final FoodReviews reviews;
  @Value("${food.demo-enabled:false}") private boolean demo;
  @Value("${food.appid:}") private String appid;
  @Value("${food.secret:}") private String secret;
- public FoodController(JdbcTemplate db,FoodSupport support,FoodOrders orders,FoodMemberService members,FoodRefunds refunds){this.refunds=refunds;this.db=db;this.support=support;this.orders=orders;this.members=members;}
+ public FoodController(JdbcTemplate db,FoodSupport support,FoodOrders orders,FoodMemberService members,FoodRefunds refunds,FoodReviews reviews){this.reviews=reviews;this.refunds=refunds;this.db=db;this.support=support;this.orders=orders;this.members=members;}
  @GetMapping("/config") public AjaxResult config(){return AjaxResult.success(Map.of("demoEnabled",demo,"brand","青禾校园"));}
  @PostMapping("/login") public AjaxResult login(@RequestBody Map<String,String> input,HttpServletRequest request){
    support.limit("login:"+request.getRemoteAddr(),30,60);
@@ -37,7 +37,7 @@ public class FoodController {
    List<Map<String,Object>> rows=db.queryForList("SELECT * FROM food_store WHERE id=? AND active=1",id);require(!rows.isEmpty(),"商家不存在或休息中");
    Map<String,Object> data=rows.get(0);data.put("products",db.queryForList("SELECT * FROM food_product WHERE store_id=? AND active=1 ORDER BY id",id));return data;
  }));}
- @GetMapping("/stores/{id}/reviews") public AjaxResult reviews(@PathVariable long id){return AjaxResult.success(db.queryForList("SELECT r.rating,r.content,r.created_at,m.nickname FROM food_review r JOIN food_member m ON m.id=r.member_id WHERE r.store_id=? ORDER BY r.id DESC LIMIT 50",id));}
+ @GetMapping("/stores/{id}/reviews") public AjaxResult reviews(@PathVariable long id){return AjaxResult.success(db.queryForList("SELECT r.id,r.rating,r.content,r.created_at,r.reply,r.replied_at,m.nickname FROM food_review r JOIN food_member m ON m.id=r.member_id WHERE r.store_id=? ORDER BY r.id DESC LIMIT 50",id));}
  @GetMapping("/me") public AjaxResult me(HttpServletRequest r){long id=support.member(r);Map<String,Object> m=db.queryForMap("SELECT id,nickname,points FROM food_member WHERE id=?",id);m.put("coupons",db.queryForObject("SELECT COUNT(*) FROM food_coupon WHERE member_id=? AND used_order IS NULL AND expires_at>NOW()",Integer.class,id));m.put("checkedIn",db.queryForObject("SELECT COUNT(*) FROM food_checkin WHERE member_id=? AND day=CURRENT_DATE",Integer.class,id)>0);return AjaxResult.success(m);}
  @PostMapping("/checkin") public AjaxResult checkin(HttpServletRequest r){members.checkin(support.member(r));return AjaxResult.success();}
  @PostMapping("/redeem") public AjaxResult redeem(HttpServletRequest r){long id=support.member(r);support.limit("redeem:"+id,3,60);members.redeem(id);return AjaxResult.success();}
@@ -73,12 +73,13 @@ public class FoodController {
    return AjaxResult.success(list);
  }
  @GetMapping("/orders/by-request/{key}") public AjaxResult recover(@PathVariable String key,HttpServletRequest r){long member=support.member(r);require(key.matches("[A-Za-z0-9-]{16,80}"),"无效请求编号");var ids=db.queryForList("SELECT id FROM food_order WHERE member_id=? AND request_key=?",String.class,member,key);return AjaxResult.success(ids.isEmpty()?Map.of("found",false):Map.of("found",true,"order",orders.detail(member,ids.get(0))));}
- @PostMapping("/orders/{id}/refund") public AjaxResult refund(@PathVariable String id,@RequestBody Map<String,String> body,HttpServletRequest r){require(demo,"当前仅支持模拟退款");refunds.request(support.member(r),id,body.get("reason"));return AjaxResult.success();}
+ @PostMapping("/orders/{id}/refund") public AjaxResult refund(@PathVariable String id,@RequestBody FoodRefunds.Request body,HttpServletRequest r){require(demo,"当前仅支持模拟退款");refunds.request(support.member(r),id,body);return AjaxResult.success();}
+ @PostMapping("/orders/{id}/refund-quote") public AjaxResult quote(@PathVariable String id,@RequestBody FoodRefunds.Request body,HttpServletRequest r){return AjaxResult.success(refunds.quote(support.member(r),id,body));}
  @GetMapping("/orders/{id}") public AjaxResult detail(@PathVariable String id,HttpServletRequest r){return AjaxResult.success(orders.detail(support.member(r),id));}
  @PostMapping("/orders/{id}/pay") public AjaxResult pay(@PathVariable String id,HttpServletRequest r){require(demo,"模拟支付未启用，真实支付尚未接入");orders.transition(id,support.member(r),"PENDING");return AjaxResult.success();}
  @PostMapping("/orders/{id}/cancel") public AjaxResult cancel(@PathVariable String id,HttpServletRequest r){orders.transition(id,support.member(r),"CANCELLED");return AjaxResult.success();}
  @PostMapping("/orders/{id}/complete") public AjaxResult complete(@PathVariable String id,HttpServletRequest r){orders.transition(id,support.member(r),"COMPLETED");return AjaxResult.success();}
- @PostMapping("/orders/{id}/review") public AjaxResult review(@PathVariable String id,@RequestBody Map<String,Object> input,HttpServletRequest r){long member=support.member(r);Map<String,Object> order=orders.detail(member,id);require("COMPLETED".equals(order.get("status")),"完成订单后才能评价");int rating=Integer.parseInt(text(input,"rating"));String content=text(input,"content").trim();require(rating>=1&&rating<=5&&content.length()>=2&&content.length()<=500,"请填写2至500字评价和1至5分评分");require(db.update("INSERT IGNORE INTO food_review(order_id,member_id,store_id,rating,content) VALUES(?,?,?,?,?)",id,member,order.get("store_id"),rating,content)==1,"该订单已评价");return AjaxResult.success();}
+ @PostMapping("/orders/{id}/review") public AjaxResult review(@PathVariable String id,@RequestBody Map<String,Object> input,HttpServletRequest r){reviews.submit(support.member(r),id,input);return AjaxResult.success();}
  @GetMapping("/feedback") public AjaxResult feedback(HttpServletRequest r){return AjaxResult.success(db.queryForList("SELECT * FROM food_feedback WHERE member_id=? ORDER BY id DESC LIMIT 50",support.member(r)));}
  @PostMapping("/feedback") public AjaxResult feedback(@RequestBody Map<String,Object> body,HttpServletRequest r){long id=support.member(r);support.limit("feedback:"+id,5,60);String content=text(body,"content").trim();require(content.length()>=5&&content.length()<=1000,"请输入5至1000字反馈");db.update("INSERT INTO food_feedback(member_id,content) VALUES(?,?)",id,content);return AjaxResult.success();}
 }

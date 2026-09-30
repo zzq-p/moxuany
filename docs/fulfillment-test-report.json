@@ -1,0 +1,10 @@
+{
+  "date": "2026-09-30T11:20:39.706Z",
+  "checks": [
+    "pickup: customer/status bypass and foreign merchant denied; wrong code rejected; five concurrent verifications complete and award points once with actor/time",
+    "reviews: ownership/validation, concurrent average 4.0, duplicate-safe submission, detail readback, merchant-scoped replies and public display",
+    "reservations: 8 requests/2 slots, daily base/spec/addon stock isolation, stale edits denied, duplicate cancel/refund release once, expiry release, rollback, cross-slot inventory race",
+    "delivery: scoped overdue alerts, concurrent max-active guard, owner-only issues, blocked completion during issue, platform-only transfer, stale/disabled/full target rejection, resolution and audited completion"
+  ],
+  "scope": "Local isolated fixtures and simulated payments; all business fixture data removed afterwards."
+}

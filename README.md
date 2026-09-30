@@ -18,6 +18,10 @@
 
 ## 已实现
 
+新增：**微信订阅消息配置、出餐排队与预计时间、图片举证与按菜品部分退款、菜品分时售卖/临时售罄、收藏/再来一单、店长/接单员/后厨分工**。入口、金额与权限规则见 [EXPERIENCE.md](docs/EXPERIENCE.md)。用户尚无微信模板，真实消息发送默认关闭；部分退款仍为模拟资金流程。
+
+新增：**评价与商家回复、半小时时段限单、按日期配置预约库存、配送异常及平台转派、骑手配送数量上限、商家验码取餐**。入口和升级规则见 [FULFILLMENT.md](docs/FULFILLMENT.md)。预约库存须按日配置；无评价的店铺显示暂无评分。
+
 新增：**退款售后、规格加料、预约与分段营业、骑手配送工作台、地图选收货点、经营报表与CSV导出**，以及弱网下单恢复、超时订单分批清理。详细入口、规则和测试见 [OPERATIONS.md](docs/OPERATIONS.md)。运行 `node scripts/seed-operations-demo.cjs` 可补建体验厨房与演示骑手（本机已建立）；骑手登录 `rider_demo / RiderDemo123!`。
 
 新增：**商家接单提醒、配送半径与营业时间、商家/菜品服务端分页搜索**。使用与验证说明见 [BUSINESS-FEATURES.md](docs/BUSINESS-FEATURES.md)。后台顶部开启提示音，在“商家管理 → 编辑”配置营业时段和配送范围。
@@ -66,7 +70,7 @@ npm run build:miniapp
 mvn -f server/pom.xml clean package -DskipTests
 ```
 
-`scripts/configure.cjs` 首次生成随机本地数据库密码、JWT 密钥，保存于忽略提交的 `.env`；不会覆盖已有配置。数据库首次初始化执行 `server/sql/` 和 `database/03-food.sql`。已有卷不会重复执行初始化脚本；`npm start` 会运行 `scripts/upgrade-local.cjs` 非破坏性执行 `04-operations.sql`、`05-delivery.sql`，补齐规格、售后、预约、骑手、坐标与营业字段和相关索引。不要为了升级删除数据卷。
+`scripts/configure.cjs` 首次生成随机本地数据库密码、JWT 密钥，保存于忽略提交的 `.env`；不会覆盖已有配置。数据库首次初始化执行 `server/sql/` 和 `database/03-food.sql`。已有卷不会重复执行初始化脚本；`npm start` 会运行 `scripts/upgrade-local.cjs` 非破坏性执行 `04-operations.sql`、`05-delivery.sql`、`06-fulfillment.sql`，补齐规格、售后、预约、骑手、坐标与营业字段和相关索引。不要为了升级删除数据卷。
 
 MySQL `127.0.0.1:13306`，数据库/用户名 `moxuany`，密码见 `.env`；Redis `127.0.0.1:16379`，业务使用 DB 1。容器只绑定本地回环地址，不会替换或清除其他容器数据。
 
