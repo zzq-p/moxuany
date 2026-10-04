@@ -20,17 +20,26 @@ public class FoodController {
  @Value("${food.secret:}") private String secret;
  public FoodController(JdbcTemplate db,FoodSupport support,FoodOrders orders,FoodMemberService members,FoodRefunds refunds,FoodReviews reviews){this.reviews=reviews;this.refunds=refunds;this.db=db;this.support=support;this.orders=orders;this.members=members;}
  @GetMapping("/config") public AjaxResult config(){return AjaxResult.success(Map.of("demoEnabled",demo,"brand","青禾校园"));}
+ @PostMapping("/logout") public AjaxResult logout(HttpServletRequest request){support.logout(request);return AjaxResult.success();}
  @PostMapping("/login") public AjaxResult login(@RequestBody Map<String,String> input,HttpServletRequest request){
    support.limit("login:"+request.getRemoteAddr(),30,60);
    String openid;
-   if("demo".equals(input.get("mode"))){require(demo,"演示登录未启用");openid="demo:"+UUID.randomUUID();}
+   if("demo".equals(input.get("mode"))){
+     require(demo,"演示登录未启用");
+     if(input.get("demoCredential")!=null){
+       long id=support.demoMember(input.get("demoCredential"));
+       require(db.queryForObject("SELECT COUNT(*) FROM food_member WHERE id=? AND openid LIKE 'demo:%'",Integer.class,id)==1,"演示账号不存在");
+       return AjaxResult.success(Map.of("token",support.session(id),"memberId",id,"demoCredential",support.demoCredential(id)));
+     }
+     openid="demo:"+UUID.randomUUID();
+   }
    else {
      require(!appid.isBlank()&&!secret.isBlank(),"请配置微信 AppSecret，或使用演示登录");
      require(input.get("code")!=null && input.get("code").length()<200,"缺少微信登录凭证");
      Map<?,?> data=RestClient.create("https://api.weixin.qq.com").get().uri(b->b.path("/sns/jscode2session").queryParam("appid",appid).queryParam("secret",secret).queryParam("js_code",input.get("code")).queryParam("grant_type","authorization_code").build()).retrieve().body(Map.class);
      require(data!=null && data.get("openid")!=null,"微信登录失败，请重试");openid=data.get("openid").toString();
    }
-   long id=members.login(openid);return AjaxResult.success(Map.of("token",support.session(id),"memberId",id));
+   long id=members.login(openid);var result=new HashMap<String,Object>();result.put("token",support.session(id));result.put("memberId",id);if(openid.startsWith("demo:"))result.put("demoCredential",support.demoCredential(id));return AjaxResult.success(result);
  }
  @GetMapping("/stores") public AjaxResult stores(){return AjaxResult.success(support.cache("stores",()->db.queryForList("SELECT s.*,(SELECT GROUP_CONCAT(p.name SEPARATOR ' ') FROM food_product p WHERE p.store_id=s.id AND p.active=1) search_keywords FROM food_store s WHERE s.active=1 ORDER BY s.sales DESC")));}
  @GetMapping("/stores/{id}") public AjaxResult store(@PathVariable long id){return AjaxResult.success(support.cache("store:"+id,()->{
@@ -38,7 +47,7 @@ public class FoodController {
    Map<String,Object> data=rows.get(0);data.put("products",db.queryForList("SELECT * FROM food_product WHERE store_id=? AND active=1 ORDER BY id",id));return data;
  }));}
  @GetMapping("/stores/{id}/reviews") public AjaxResult reviews(@PathVariable long id){return AjaxResult.success(db.queryForList("SELECT r.id,r.rating,r.content,r.created_at,r.reply,r.replied_at,m.nickname FROM food_review r JOIN food_member m ON m.id=r.member_id WHERE r.store_id=? ORDER BY r.id DESC LIMIT 50",id));}
- @GetMapping("/me") public AjaxResult me(HttpServletRequest r){long id=support.member(r);Map<String,Object> m=db.queryForMap("SELECT id,nickname,points FROM food_member WHERE id=?",id);m.put("coupons",db.queryForObject("SELECT COUNT(*) FROM food_coupon WHERE member_id=? AND used_order IS NULL AND expires_at>NOW()",Integer.class,id));m.put("checkedIn",db.queryForObject("SELECT COUNT(*) FROM food_checkin WHERE member_id=? AND day=CURRENT_DATE",Integer.class,id)>0);return AjaxResult.success(m);}
+ @GetMapping("/me") public AjaxResult me(HttpServletRequest r){long id=support.member(r);Map<String,Object> m=db.queryForMap("SELECT id,nickname,points FROM food_member WHERE id=?",id);if(demo&&db.queryForObject("SELECT COUNT(*) FROM food_member WHERE id=? AND openid LIKE 'demo:%'",Integer.class,id)==1)m.put("demoCredential",support.demoCredential(id));m.put("coupons",db.queryForObject("SELECT COUNT(*) FROM food_coupon WHERE member_id=? AND used_order IS NULL AND expires_at>NOW()",Integer.class,id));m.put("checkedIn",db.queryForObject("SELECT COUNT(*) FROM food_checkin WHERE member_id=? AND day=CURRENT_DATE",Integer.class,id)>0);return AjaxResult.success(m);}
  @PostMapping("/checkin") public AjaxResult checkin(HttpServletRequest r){members.checkin(support.member(r));return AjaxResult.success();}
  @PostMapping("/redeem") public AjaxResult redeem(HttpServletRequest r){long id=support.member(r);support.limit("redeem:"+id,3,60);members.redeem(id);return AjaxResult.success();}
  @GetMapping("/coupons") public AjaxResult coupons(HttpServletRequest r){return AjaxResult.success(db.queryForList("SELECT * FROM food_coupon WHERE member_id=? AND used_order IS NULL AND expires_at>NOW() ORDER BY amount DESC",support.member(r)));}

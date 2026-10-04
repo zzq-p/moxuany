@@ -165,9 +165,10 @@ public class FoodOrders {
             restore(order);
         }
         if(target.equals("COMPLETED")) {
+            // Match completed-order refunds: products (ascending), then member, then store.
+            for(Map<String,Object> item:db.queryForList("SELECT * FROM food_order_item WHERE order_id=? ORDER BY product_id",id)) db.update("UPDATE food_product SET sales=sales+? WHERE id=?",number(item,"quantity")-number(item,"refunded_quantity"),item.get("product_id"));
             db.update("UPDATE food_member SET points=points+? WHERE id=?",(number(order,"total")-number(order,"refunded_amount"))/100,order.get("member_id"));
             db.update("UPDATE food_store SET sales=sales+1 WHERE id=?",order.get("store_id"));
-            for(Map<String,Object> item:db.queryForList("SELECT * FROM food_order_item WHERE order_id=? ORDER BY product_id",id)) db.update("UPDATE food_product SET sales=sales+? WHERE id=?",number(item,"quantity")-number(item,"refunded_quantity"),item.get("product_id"));
         }
     }
 }

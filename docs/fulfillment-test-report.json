@@ -1,5 +1,5 @@
 {
-  "date": "2026-09-30T11:20:39.706Z",
+  "date": "2026-10-01T10:50:54.906Z",
   "checks": [
     "pickup: customer/status bypass and foreign merchant denied; wrong code rejected; five concurrent verifications complete and award points once with actor/time",
     "reviews: ownership/validation, concurrent average 4.0, duplicate-safe submission, detail readback, merchant-scoped replies and public display",

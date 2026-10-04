@@ -1,0 +1,12 @@
+{
+  "date": "2026-10-03T04:59:51.679Z",
+  "checks": [
+    "expired Redis session restores original demo account; no extra welcome coupon; tampered/member-swapped credentials rejected",
+    "real frontend recovery with account switches during lookup and POST never creates an order for the new account or clears its cart; original pending request remains recoverable",
+    "original request recovered and retried after session expiry without duplicate order or stock deduction; foreign account isolated",
+    "distance catalog works and stale checkout total rolls back stock",
+    "deterministic concurrent completion/refund share product→member→store lock order; both succeed and points/sales reconcile",
+    "logout revokes the current session immediately; repeated/anonymous logout is safe and other accounts remain signed in"
+  ],
+  "scope": "Local demo API, isolated fixtures; deterministic database lock contention, no real payments."
+}
