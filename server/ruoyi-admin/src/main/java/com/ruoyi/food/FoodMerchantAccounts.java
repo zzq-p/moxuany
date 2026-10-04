@@ -32,7 +32,12 @@ public class FoodMerchantAccounts {
  @Transactional public void updateStaff(long store,long user,String role,int active){
   scope.permit(store,"STAFF");require(java.util.Set.of("MANAGER","CLERK","KITCHEN").contains(role)&&(active==0||active==1),"岗位或状态无效");require(user!=SecurityUtils.getUserId(),"不能修改自己的岗位或停用自己");
   db.queryForMap("SELECT id FROM food_store WHERE id=? FOR UPDATE",store);var old=db.queryForList("SELECT * FROM food_store_user WHERE store_id=? AND user_id=? FOR UPDATE",store,user);require(!old.isEmpty(),"员工不存在");if(role.equals("MANAGER")||old.get(0).get("staff_role").equals("MANAGER"))scope.platformOnly();
-  if(old.get(0).get("staff_role").equals("MANAGER")&&(active==0||!role.equals("MANAGER")))require(db.queryForObject("SELECT COUNT(*) FROM food_store_user WHERE store_id=? AND active=1 AND staff_role='MANAGER' AND user_id<>?",Integer.class,store,user)>0,"至少保留一位在职店长");
+  if(old.get(0).get("staff_role").equals("MANAGER")&&(active==0||!role.equals("MANAGER"))){
+   // Permission checks may have opened an older REPEATABLE READ snapshot before
+   // the store mutex was acquired. A locking read sees the preceding update.
+   var managers=db.queryForList("SELECT user_id FROM food_store_user WHERE store_id=? AND active=1 AND staff_role='MANAGER' AND user_id<>? FOR UPDATE",Long.class,store,user);
+   require(!managers.isEmpty(),"至少保留一位在职店长");
+  }
   db.update("UPDATE food_store_user SET staff_role=?,active=? WHERE store_id=? AND user_id=?",role,active,store,user);db.update("DELETE FROM sys_user_role WHERE user_id=?",user);db.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,?)",user,roleId(role));scope.audit(store,"STAFF_UPDATE",Long.toString(user),role+" / "+(active==1?"启用":"停用"));
  }
 }

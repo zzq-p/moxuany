@@ -68,7 +68,14 @@ public class FoodAdminController {
  }
  @GetMapping("/orders/{id}") public AjaxResult order(@PathVariable String id){scope.order(id);List<Long> ids=db.queryForList("SELECT member_id FROM food_order WHERE id=?",Long.class,id);require(!ids.isEmpty(),"订单不存在");return AjaxResult.success(FoodOrders.merchantView(orders.detail(ids.get(0),id)));}
  @Log(title="点餐订单流转",businessType=BusinessType.UPDATE)
- @PostMapping("/orders/{id}/status") public AjaxResult status(@PathVariable String id,@RequestBody Map<String,String> body){scope.order(id);String target=body.get("status");require(target!=null&&Set.of("PREPARING","WAITING_DELIVERY","DELIVERING","READY","COMPLETED","CANCELLED").contains(target),"无效的目标状态");long store=scope.permitOrder(id,Set.of("READY","WAITING_DELIVERY").contains(target)?"COOK":"ORDER");orders.transition(id,null,target);scope.audit(store,"ORDER_STATUS",id,target);return AjaxResult.success();}
+  @PostMapping("/orders/{id}/status") public AjaxResult status(@PathVariable String id,@RequestBody Map<String,String> body){
+    scope.order(id);String target=body.get("status");
+    require(target!=null&&Set.of("PREPARING","WAITING_DELIVERY","DELIVERING","READY","COMPLETED","CANCELLED").contains(target),"无效的目标状态");
+    // Direct merchant delivery also confirms that preparation has finished.
+    String capability=Set.of("READY","WAITING_DELIVERY","DELIVERING").contains(target)?"COOK":"ORDER";
+    long store=scope.permitOrder(id,capability);
+    orders.transition(id,null,target);scope.audit(store,"ORDER_STATUS",id,target);return AjaxResult.success();
+  }
  @GetMapping("/products/{id}/reservation-stock") public AjaxResult stock(@PathVariable long id,@RequestParam String date){scope.store(db.queryForObject("SELECT store_id FROM food_product WHERE id=?",Long.class,id));return AjaxResult.success(reservations.list(id,date));}
  @Log(title="按日预约库存",businessType=BusinessType.UPDATE) @PostMapping("/products/{id}/reservation-stock") public AjaxResult stock(@PathVariable long id,@RequestParam String date,@RequestBody List<Map<String,Object>> rows){scope.store(db.queryForObject("SELECT store_id FROM food_product WHERE id=?",Long.class,id));long store=db.queryForObject("SELECT store_id FROM food_product WHERE id=?",Long.class,id);scope.permit(store,"CATALOG");reservations.save(id,date,rows);scope.audit(store,"DAILY_STOCK",Long.toString(id),date);return AjaxResult.success();}
  @Log(title="商家回复评价",businessType=BusinessType.UPDATE) @PostMapping("/orders/{id}/review-reply") public AjaxResult reviewReply(@PathVariable String id,@RequestBody Map<String,String> body){scope.permitOrder(id,"REPLY");reviews.reply(id,body.get("reply"));return AjaxResult.success();}

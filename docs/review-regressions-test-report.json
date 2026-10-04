@@ -1,0 +1,9 @@
+{
+  "date": "2026-10-04T15:40:00.540Z",
+  "checks": [
+    "all preparation-exit paths require COOK; kitchen, clerk completion, manager and platform permissions remain correct; cross-store access denied",
+    "report and actual CSV totals reconcile for unpaid, cancelled, paid, discounted partial-refund and full-refund orders; merchant scope preserved",
+    "deterministic simultaneous deactivation, demotion and mixed requests always retain one active manager; rejected staff/role changes roll back"
+  ],
+  "scope": "Local simulated API in a temporary schema and Redis DB14; actual Vue CSV action; deterministic MySQL lock contention."
+}

@@ -96,6 +96,8 @@ npm run build:miniapp
 
 代码审查修复验证：`node scripts/test-session-boundaries.mjs` 检查收藏、再来一单、订单详情及售后弹窗的会话隔离；`node scripts/test-checkout-regressions.mjs` 检查登录恢复、账号隔离及结算迟到响应；本地后端启动后运行 `node scripts/test-review-fixes.cjs`，验证真实会话过期、原订单幂等恢复、凭证篡改拒绝及完成订单/退款的数据库锁竞争。后者仅操作隔离的本地演示测试数据，结束时清理，结果见 `docs/review-fixes-test-report.json`。
 
+权限与报表回归：重新构建后端 JAR 后运行 `npm run test:review`。需已升级的本地 MySQL/Redis 容器、管理端依赖、空闲端口18080及空的 Redis DB14；脚本自动建立临时数据库、启动测试后端，结束后清理，不改原业务库或 Redis DB1。覆盖接单员不能绕过后厨出餐权限、并发停用/降职仍保留最后一位店长，以及未付款、取消、部分退款、整单退款的接口与实际CSV金额对账。结果见 `docs/review-regressions-test-report.json`。本地管理员改过密码时可设置 `FOOD_TEST_ADMIN_PASSWORD`。
+
 ## 商家入驻与操作
 
 1. 总后台登录，进入“校园点餐 → 商家管理”，新增或导入商家。

@@ -12,6 +12,7 @@
     "build:admin": "npm run build:prod --prefix admin",
     "test:integration": "node scripts/test-integration.cjs",
     "test:fulfillment": "node scripts/test-fulfillment.cjs",
-    "test:experience": "node scripts/test-experience.cjs"
+    "test:experience": "node scripts/test-experience.cjs",
+    "test:review": "node scripts/test-review-regressions.cjs"
   }
 }
