@@ -1,12 +1,14 @@
 {
-  "date": "2026-10-03T04:59:51.679Z",
+  "date": "2026-10-04T09:09:20.700Z",
   "checks": [
+    "signed expired and legacy unrevocable recovery credentials are rejected; new credentials expire within 30 days",
     "expired Redis session restores original demo account; no extra welcome coupon; tampered/member-swapped credentials rejected",
     "real frontend recovery with account switches during lookup and POST never creates an order for the new account or clears its cart; original pending request remains recoverable",
     "original request recovered and retried after session expiry without duplicate order or stock deduction; foreign account isolated",
     "distance catalog works and stale checkout total rolls back stock",
     "deterministic concurrent completion/refund share product→member→store lock order; both succeed and points/sales reconcile",
-    "logout revokes the current session immediately; repeated/anonymous logout is safe and other accounts remain signed in"
+    "merchant list/detail/kitchen omit pickup code; customer keeps code and correct-code verification still works",
+    "logout revokes current session and all older recovery credentials, including concurrent me issuance and logout after session expiry; repeated logout is safe"
   ],
   "scope": "Local demo API, isolated fixtures; deterministic database lock contention, no real payments."
 }

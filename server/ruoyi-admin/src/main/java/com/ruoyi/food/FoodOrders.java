@@ -89,6 +89,11 @@ public class FoodOrders {
         db.update("UPDATE food_order SET subtotal=?,delivery_fee=?,discount=?,total=?,coupon_id=?,address=? WHERE id=?",subtotal,fee,discount,subtotal+fee-discount,c.couponId(),address,id);
         return detail(member,id);
     }
+    public static Map<String,Object> merchantView(Map<String,Object> order) {
+        var result=new LinkedHashMap<String,Object>(order);
+        result.remove("pickup_code");
+        return result;
+    }
     public Map<String,Object> detail(long member,String id) {
         List<Map<String,Object>> list=db.queryForList("SELECT o.*,s.name store_name,s.image store_image FROM food_order o JOIN food_store s ON s.id=o.store_id WHERE o.id=? AND o.member_id=?",id,member);
         require(!list.isEmpty(),"订单不存在");

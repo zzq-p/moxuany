@@ -6,6 +6,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
+import org.springframework.jdbc.core.JdbcTemplate;
+import java.time.Instant;
 import java.time.Duration;
 import java.util.*;
 import java.util.function.Supplier;
@@ -15,7 +17,8 @@ public class FoodSupport {
     @org.springframework.beans.factory.annotation.Value("${token.secret}") private String signingKey;
     final StringRedisTemplate redis;
     final ObjectMapper json;
-    public FoodSupport(StringRedisTemplate redis, ObjectMapper json) { this.redis=redis; this.json=json; }
+    private final JdbcTemplate db;
+    public FoodSupport(StringRedisTemplate redis, ObjectMapper json, JdbcTemplate db) { this.redis=redis; this.json=json; this.db=db; }
     public static void require(boolean ok, String message) { if(!ok) throw new ServiceException(message); }
     public static long number(Map<String,Object> row,String key) { return ((Number)row.get(key)).longValue(); }
     public static String text(Map<String,Object> row,String key) { return Objects.toString(row.get(key),""); }
@@ -30,13 +33,21 @@ public class FoodSupport {
         redis.opsForValue().set("food:session:"+token,Long.toString(member),Duration.ofDays(7));
         return token;
     }
-    public void logout(HttpServletRequest request) {
+    public void logout(HttpServletRequest request, String credential) {
         String token=request.getHeader("X-Food-Token");
+        String id=token==null?null:redis.opsForValue().get("food:session:"+token);
+        // A saved recovery credential can also revoke recovery after the session expires.
+        Long member=id==null?null:Long.valueOf(id);
+        if(member==null&&credential!=null&&!credential.isBlank()) {
+            try { member=demoMember(credential); } catch(ServiceException ignored) { /* Already revoked or expired. */ }
+        }
+        if(member!=null)db.update("UPDATE food_member SET recovery_version=recovery_version+1 WHERE id=?",member);
         if(token!=null&&!token.isBlank())redis.delete("food:session:"+token);
     }
-    // Demo identity survives Redis session expiry; only a server-signed credential can restore it.
+    // Call inside the login/me transaction. The member lock serializes issuance and logout.
     public String demoCredential(long member) {
-        String value=member+"."+UUID.randomUUID().toString().replace("-","");
+        long version=db.queryForObject("SELECT recovery_version FROM food_member WHERE id=? FOR UPDATE",Long.class,member);
+        String value="v2."+member+"."+version+"."+Instant.now().plus(Duration.ofDays(30)).getEpochSecond()+"."+UUID.randomUUID().toString().replace("-","");
         return value+"."+demoSignature(value);
     }
     private String demoSignature(String value) {
@@ -47,10 +58,14 @@ public class FoodSupport {
         } catch(java.security.GeneralSecurityException e) {throw new IllegalStateException(e);}
     }
     public long demoMember(String credential) {
-        require(credential!=null&&credential.matches("[1-9][0-9]{0,17}\\.[a-f0-9]{32}\\.[a-f0-9]{64}"),"演示账号恢复凭证无效");
+        require(credential!=null&&credential.matches("v2\\.[1-9][0-9]{0,17}\\.[0-9]{1,18}\\.[0-9]{1,12}\\.[a-f0-9]{32}\\.[a-f0-9]{64}"),"演示账号恢复凭证无效，请退出后重新登录");
         int split=credential.lastIndexOf('.');String value=credential.substring(0,split);
         require(java.security.MessageDigest.isEqual(demoSignature(value).getBytes(java.nio.charset.StandardCharsets.UTF_8),credential.substring(split+1).getBytes(java.nio.charset.StandardCharsets.UTF_8)),"演示账号恢复凭证无效");
-        return Long.parseLong(value.substring(0,value.indexOf('.')));
+        String[] parts=value.split("\\.");long member=Long.parseLong(parts[1]);
+        require(Long.parseLong(parts[3])>Instant.now().getEpochSecond(),"演示账号恢复凭证已过期，请退出后重新登录");
+        var versions=db.queryForList("SELECT recovery_version FROM food_member WHERE id=? AND openid LIKE 'demo:%' FOR UPDATE",Long.class,member);
+        require(!versions.isEmpty()&&versions.get(0)==Long.parseLong(parts[2]),"演示账号恢复凭证已撤销，请退出后重新登录");
+        return member;
     }
     public void limit(String key,int max,int seconds) {
         Long n=redis.execute(new DefaultRedisScript<>("local n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],ARGV[1]); end; return n",Long.class),List.of("food:rate:"+key),Integer.toString(seconds));

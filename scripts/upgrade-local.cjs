@@ -46,4 +46,5 @@ for(const [table,name,type] of [
 if(!sql("SELECT COUNT(*) FROM food_feature_migration WHERE name='service-experience-v1'").match(/^1$/)){
  sql("START TRANSACTION; UPDATE food_order SET refunded_amount=total WHERE status='REFUNDED'; UPDATE food_order_item i JOIN food_order o ON o.id=i.order_id SET i.refunded_quantity=i.quantity WHERE o.status='REFUNDED'; UPDATE food_order SET preparing_at=updated_at WHERE status='PREPARING'; INSERT INTO food_feature_migration(name) VALUES('service-experience-v1'); COMMIT;");
 }
+if(!sql("SHOW COLUMNS FROM food_member LIKE 'recovery_version'"))sql('ALTER TABLE food_member ADD COLUMN recovery_version BIGINT NOT NULL DEFAULT 0');
 console.log('Local schema is current');

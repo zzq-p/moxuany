@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestClient;
 import java.util.*;
+import org.springframework.transaction.annotation.Transactional;
 import static com.ruoyi.food.FoodSupport.*;
 
 @Anonymous
@@ -20,8 +21,8 @@ public class FoodController {
  @Value("${food.secret:}") private String secret;
  public FoodController(JdbcTemplate db,FoodSupport support,FoodOrders orders,FoodMemberService members,FoodRefunds refunds,FoodReviews reviews){this.reviews=reviews;this.refunds=refunds;this.db=db;this.support=support;this.orders=orders;this.members=members;}
  @GetMapping("/config") public AjaxResult config(){return AjaxResult.success(Map.of("demoEnabled",demo,"brand","青禾校园"));}
- @PostMapping("/logout") public AjaxResult logout(HttpServletRequest request){support.logout(request);return AjaxResult.success();}
- @PostMapping("/login") public AjaxResult login(@RequestBody Map<String,String> input,HttpServletRequest request){
+ @Transactional @PostMapping("/logout") public AjaxResult logout(HttpServletRequest request,@RequestBody(required=false) Map<String,String> body){support.logout(request,demo&&body!=null?body.get("demoCredential"):null);return AjaxResult.success();}
+ @Transactional @PostMapping("/login") public AjaxResult login(@RequestBody Map<String,String> input,HttpServletRequest request){
    support.limit("login:"+request.getRemoteAddr(),30,60);
    String openid;
    if("demo".equals(input.get("mode"))){
@@ -47,7 +48,7 @@ public class FoodController {
    Map<String,Object> data=rows.get(0);data.put("products",db.queryForList("SELECT * FROM food_product WHERE store_id=? AND active=1 ORDER BY id",id));return data;
  }));}
  @GetMapping("/stores/{id}/reviews") public AjaxResult reviews(@PathVariable long id){return AjaxResult.success(db.queryForList("SELECT r.id,r.rating,r.content,r.created_at,r.reply,r.replied_at,m.nickname FROM food_review r JOIN food_member m ON m.id=r.member_id WHERE r.store_id=? ORDER BY r.id DESC LIMIT 50",id));}
- @GetMapping("/me") public AjaxResult me(HttpServletRequest r){long id=support.member(r);Map<String,Object> m=db.queryForMap("SELECT id,nickname,points FROM food_member WHERE id=?",id);if(demo&&db.queryForObject("SELECT COUNT(*) FROM food_member WHERE id=? AND openid LIKE 'demo:%'",Integer.class,id)==1)m.put("demoCredential",support.demoCredential(id));m.put("coupons",db.queryForObject("SELECT COUNT(*) FROM food_coupon WHERE member_id=? AND used_order IS NULL AND expires_at>NOW()",Integer.class,id));m.put("checkedIn",db.queryForObject("SELECT COUNT(*) FROM food_checkin WHERE member_id=? AND day=CURRENT_DATE",Integer.class,id)>0);return AjaxResult.success(m);}
+ @Transactional @GetMapping("/me") public AjaxResult me(HttpServletRequest r){long id=support.member(r);Map<String,Object> m=db.queryForMap("SELECT id,nickname,points FROM food_member WHERE id=?",id);if(demo&&db.queryForObject("SELECT COUNT(*) FROM food_member WHERE id=? AND openid LIKE 'demo:%'",Integer.class,id)==1){String credential=support.demoCredential(id);require(support.member(r)==id,"登录状态已变化");m.put("demoCredential",credential);}m.put("coupons",db.queryForObject("SELECT COUNT(*) FROM food_coupon WHERE member_id=? AND used_order IS NULL AND expires_at>NOW()",Integer.class,id));m.put("checkedIn",db.queryForObject("SELECT COUNT(*) FROM food_checkin WHERE member_id=? AND day=CURRENT_DATE",Integer.class,id)>0);return AjaxResult.success(m);}
  @PostMapping("/checkin") public AjaxResult checkin(HttpServletRequest r){members.checkin(support.member(r));return AjaxResult.success();}
  @PostMapping("/redeem") public AjaxResult redeem(HttpServletRequest r){long id=support.member(r);support.limit("redeem:"+id,3,60);members.redeem(id);return AjaxResult.success();}
  @GetMapping("/coupons") public AjaxResult coupons(HttpServletRequest r){return AjaxResult.success(db.queryForList("SELECT * FROM food_coupon WHERE member_id=? AND used_order IS NULL AND expires_at>NOW() ORDER BY amount DESC",support.member(r)));}

@@ -22,7 +22,16 @@ const prefix='review'+Date.now(),checks=[],pass=s=>{checks.push(s);console.log('
   const resumed=ok(await call('/food/app/login',{mode:'demo',demoCredential:member.demoCredential}));sessions.push(resumed.token);
   assert.equal(resumed.memberId,member.memberId);assert.equal(sql('SELECT COUNT(*) FROM food_coupon WHERE member_id='+member.memberId),before);
   const me=ok(await call('/food/app/me',undefined,resumed.token));assert(me.demoCredential);assert.equal(me.id,member.memberId);
-  for(const credential of [member.demoCredential.replace(/^\d+/,String(other.memberId)),member.demoCredential.slice(0,-1)+(member.demoCredential.endsWith('0')?'1':'0'),'invalid'])assert.notEqual((await call('/food/app/login',{mode:'demo',demoCredential:credential})).code,200);
+  for(const credential of [member.demoCredential.replace(/^v2\.\d+/, 'v2.'+other.memberId),member.demoCredential.slice(0,-1)+(member.demoCredential.endsWith('0')?'1':'0'),'invalid'])assert.notEqual((await call('/food/app/login',{mode:'demo',demoCredential:credential})).code,200);
+  const secret=process.env.TOKEN_SECRET||fs.readFileSync('.env','utf8').split(/\r?\n/).find(line=>line.startsWith('TOKEN_SECRET=')).slice('TOKEN_SECRET='.length);
+  const expiredParts=member.demoCredential.split('.');expiredParts[3]=String(Math.floor(Date.now()/1000)-1);
+  const expiredValue=expiredParts.slice(0,-1).join('.');
+  const expired=expiredValue+'.'+crypto.createHmac('sha256',secret).update('food-demo:'+expiredValue).digest('hex');
+  assert.notEqual((await call('/food/app/login',{mode:'demo',demoCredential:expired})).code,200);
+  const legacyValue=member.memberId+'.'+'a'.repeat(32),legacy=legacyValue+'.'+crypto.createHmac('sha256',secret).update('food-demo:'+legacyValue).digest('hex');
+  assert.notEqual((await call('/food/app/login',{mode:'demo',demoCredential:legacy})).code,200);
+  assert(Number(member.demoCredential.split('.')[3])>Date.now()/1000+29*86400);
+  pass('signed expired and legacy unrevocable recovery credentials are rejected; new credentials expire within 30 days');
   member.token=resumed.token;
   pass('expired Redis session restores original demo account; no extra welcome coupon; tampered/member-swapped credentials rejected');
   const login=await call('/login',{username:'admin',password:'admin123'});ok(login);
@@ -87,13 +96,35 @@ const prefix='review'+Date.now(),checks=[],pass=s=>{checks.push(s);console.log('
   assert.equal(Number(sql('SELECT points FROM food_member WHERE id='+member.memberId)),10);
   assert.equal(Number(sql('SELECT sales FROM food_product WHERE id='+product.id)),1);assert.equal(Number(sql('SELECT sales FROM food_store WHERE id='+store.id)),1);
   pass('deterministic concurrent completion/refund share product→member→store lock order; both succeed and points/sales reconcile');
-  ok(await app('/logout',{}));
+  const pickup=ok(await app('/orders',{...body,requestKey:crypto.randomUUID()}));
+  assert.match(pickup.pickup_code,/^[0-9]{6}$/);
+  const absent=row=>assert.equal(Object.hasOwn(row,'pickup_code'),false);
+  absent(ok(await admin('/orders/'+pickup.id)));
+  ok(await admin('/orders')).rows.forEach(absent);
+  ok(await app('/orders/'+pickup.id+'/pay',{}));
+  const queue=ok(await admin('/kitchen?storeId='+store.id));assert(queue.some(o=>o.id===pickup.id));queue.forEach(absent);
+  ok(await admin('/orders/'+pickup.id+'/status',{status:'PREPARING'}));
+  ok(await admin('/orders/'+pickup.id+'/status',{status:'READY'}));
+  assert.notEqual((await admin('/orders/'+pickup.id+'/verify-pickup',{code:pickup.pickup_code==='000000'?'999999':'000000'})).code,200);
+  ok(await admin('/orders/'+pickup.id+'/verify-pickup',{code:pickup.pickup_code}));
+  assert.equal(ok(await app('/orders/'+pickup.id)).status,'COMPLETED');
+  pass('merchant list/detail/kitchen omit pickup code; customer keeps code and correct-code verification still works');
+  const credentialBeforeLogout=ok(await app('/me')).demoCredential;
+  const [lateMe]=await Promise.all([app('/me'),app('/logout',{})]);
+  for(const credential of [credentialBeforeLogout,member.demoCredential,me.demoCredential,...(lateMe.code===200?[lateMe.data.demoCredential]:[])]){
+   assert.notEqual((await call('/food/app/login',{mode:'demo',demoCredential:credential})).code,200);
+  }
   assert.equal((await app('/me')).code,401);
   assert.equal((await app('/orders')).code,401);
   ok(await app('/logout',{}));
   ok(await call('/food/app/logout',{}));
   assert.equal(ok(await app('/me',undefined,other.token)).id,other.memberId);
-  pass('logout revokes the current session immediately; repeated/anonymous logout is safe and other accounts remain signed in');
+  const otherCredential=ok(await app('/me',undefined,other.token)).demoCredential;
+  redis('DEL','food:session:'+other.token);
+  ok(await call('/food/app/logout',{demoCredential:otherCredential}));
+  ok(await call('/food/app/logout',{demoCredential:otherCredential}));
+  assert.notEqual((await call('/food/app/login',{mode:'demo',demoCredential:otherCredential})).code,200);
+  pass('logout revokes current session and all older recovery credentials, including concurrent me issuance and logout after session expiry; repeated logout is safe');
   fs.writeFileSync('docs/review-fixes-test-report.json',JSON.stringify({date:new Date().toISOString(),checks,scope:'Local demo API, isolated fixtures; deterministic database lock contention, no real payments.'},null,2)+'\n');
  }finally{
   if(blocker&&!blocker.stdin.destroyed)blocker.stdin.end('ROLLBACK;\n');

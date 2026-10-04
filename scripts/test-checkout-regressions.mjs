@@ -317,6 +317,12 @@ console.log('PASS late checkout responses cannot overwrite another store, quanti
  callbacks.shift().success({statusCode:200,data:{code:200,data:{token:'explicit-token',memberId:10,demoCredential:'explicit-credential'}}});await explicit
  assert.equal(api.state.signedOut,false);assert.equal(memory.has('food-signed-out'),false)
  const offline=api.logout();callbacks.shift().fail();await offline;assert.equal(api.state.token,'');assert.equal(memory.get('food-signed-out'),true)
+ api.state.demoCredential='expired-session-credential'
+ const expiredSignOut=api.logout()
+ assert.equal(calls.at(-1).header['X-Food-Token'],'')
+ assert.equal(calls.at(-1).data.demoCredential,'expired-session-credential')
+ callbacks.shift().success({statusCode:200,data:{code:200}});await expiredSignOut
+ assert.equal(api.state.demoCredential,'')
  const reloaded=evaluate(source+'\nreturn {state,ensureLogin}',stateEnv)
  const beforeReload=calls.length;assert.equal(reloaded.state.signedOut,true);await assert.rejects(reloaded.ensureLogin(),/已退出登录/);assert.equal(calls.length,beforeReload)
  console.log('PASS logout clears local identity/cart/address, preserves pending orders, blocks auto-login, ignores late responses and cancels in-flight login; explicit re-login and offline logout work')

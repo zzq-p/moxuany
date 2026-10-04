@@ -34,13 +34,13 @@ async function performLogin(revision){state.config=await request('/config');if(r
 }if(revision!==state.authRevision)throw Error('登录已取消');const result=await request('/login','POST',payload);if(revision!==state.authRevision){request('/logout','POST',null,true,result.token).catch(()=>{});throw Error('登录已取消')}state.token=result.token;activateMember(result.memberId);state.signedOut=false;uni.removeStorageSync('food-signed-out');uni.setStorageSync('food-token',result.token);if(result.demoCredential){state.demoCredential=result.demoCredential;uni.setStorageSync('food-demo-credential',result.demoCredential)}return result}
 export async function ensureLogin(){if(!state.token){if(state.signedOut)throw Error('已退出登录，请前往“我的”点击登录');await login()}}
 export async function logout(){
- const token=state.token;state.authRevision++;loginAttempt=null
+ const token=state.token,credential=state.demoCredential;state.authRevision++;loginAttempt=null
  state.token='';state.memberId=0;state.demoCredential='';state.signedOut=true
  uni.setStorageSync('food-signed-out',true)
  for(const key of ['food-token','food-demo-credential','food-selected-address'])uni.removeStorageSync(key)
  clearCart()
  // Local sign-out is immediate, including when the network is unavailable.
- if(token)try{await request('/logout','POST',null,true,token)}catch{}
+ if(token||credential)try{await request('/logout','POST',{demoCredential:credential},true,token)}catch{}
 }
 export const go=(path)=>uni.navigateTo({url:'/pages/'+path})
 export const toast=title=>uni.showToast({title,icon:'none'})
@@ -49,5 +49,5 @@ export const statuses={UNPAID:'待支付',PENDING:'待接单',PREPARING:'制作�
 export const cart=reactive(uni.getStorageSync('food-cart')||{storeId:null,items:[]})
 export function saveCart(){uni.setStorageSync('food-cart',{storeId:cart.storeId,items:cart.items,scheduledAt:cart.scheduledAt||''})}
 export function clearCart(){cart.storeId=null;cart.items=[];cart.scheduledAt='';saveCart()}
-export function uploadEvidence(orderId,filePath){return new Promise((resolve,reject)=>uni.uploadFile({url:base+'/food/app/orders/'+orderId+'/evidence',filePath,name:'file',header:{'X-Food-Token':state.token},success:r=>{try{const data=JSON.parse(r.data);if(data.code!==200)throw Error(data.msg||'上传失败');resolve(data.data)}catch(e){reject(e)}},fail:()=>reject(Error('图片上传失败，请重试'))}))}
+export function uploadEvidence(orderId,filePath,token=state.token){return new Promise((resolve,reject)=>uni.uploadFile({url:base+'/food/app/orders/'+orderId+'/evidence',filePath,name:'file',header:{'X-Food-Token':token},success:r=>{try{const data=JSON.parse(r.data);if(data.code!==200)throw Error(data.msg||'上传失败');resolve(data.data)}catch(e){reject(e)}},fail:()=>reject(Error('图片上传失败，请重试'))}))}
 export function key(){return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)+'-'+Math.random().toString(36).slice(2)}
