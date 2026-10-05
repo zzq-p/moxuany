@@ -22,6 +22,12 @@ public class FoodAdminController {
  @GetMapping("/products") public AjaxResult products(@RequestParam(required=false) Long storeId){if(storeId!=null)scope.store(storeId);return AjaxResult.success(db.queryForList("SELECT p.*,s.name store_name FROM food_product p JOIN food_store s ON s.id=p.store_id WHERE "+scope.condition("p.store_id")+(storeId==null?"":" AND p.store_id="+storeId)+" ORDER BY p.id DESC LIMIT 1000"));}
  @Log(title="开通商家账号",businessType=BusinessType.INSERT)
  @PostMapping("/stores/{id}/account") public AjaxResult account(@PathVariable long id,@RequestBody Map<String,String> body){accounts.create(id,body.get("username"),body.get("password"));return AjaxResult.success();}
+ @Log(title="店铺营业状态",businessType=BusinessType.UPDATE)
+ @Transactional @PostMapping("/stores/{id}/active") public AjaxResult active(@PathVariable long id,@RequestBody Map<String,Object> body){
+   scope.permit(id,"CATALOG");int active=integer(body,"active",0,1);
+   require(db.update("UPDATE food_store SET active=? WHERE id=?",active,id)==1,"商家不存在");
+   scope.audit(id,"STORE_EDIT",Long.toString(id),active==1?"开启营业":"店铺休息");support.invalidate(id);return AjaxResult.success();
+ }
  @Log(title="批量导入商家",businessType=BusinessType.IMPORT)
  @Transactional
  @PostMapping("/stores/import") public AjaxResult importStores(@RequestBody List<Map<String,Object>> rows){scope.platformOnly();require(!rows.isEmpty()&&rows.size()<=500,"每批须为1至500行");for(var row:rows){require(row.get("id")==null,"导入只允许新增，请勿包含id");saveStore(row);}return AjaxResult.success(Map.of("count",rows.size()));}

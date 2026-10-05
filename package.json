@@ -13,6 +13,6 @@
     "test:integration": "node scripts/test-integration.cjs",
     "test:fulfillment": "node scripts/test-fulfillment.cjs",
     "test:experience": "node scripts/test-experience.cjs",
-    "test:review": "node scripts/test-review-regressions.cjs"
+    "test:review": "node scripts/test-admin-review-fixes.cjs && node scripts/test-review-regressions.cjs"
   }
 }

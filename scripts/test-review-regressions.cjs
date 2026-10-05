@@ -6,6 +6,7 @@ const path = require('node:path');
 const net = require('node:net');
 const {createRequire} = require('node:module');
 const {execFileSync, spawn} = require('node:child_process');
+const {component} = require('./test-admin-review-fixes.cjs');
 
 process.chdir(path.resolve(__dirname, '..'));
 const docker = process.env.DOCKER_BIN || 'D:/Docker/Desktop/resources/bin/docker.exe';
@@ -231,6 +232,8 @@ async function test() {
   await verifyCsv(rows, report.summary);
   pass('report and actual CSV totals reconcile for unpaid, cancelled, paid, discounted partial-refund and full-refund orders; merchant scope preserved');
 
+  await verifyAdminFixes(admin, actors, stores, app, create, pay, detail);
+
   ok(await admin('/staff', {storeId: store.id, username: 'review_manager_b', password: 'ReviewTest123!', name: 'Second manager', role: 'MANAGER'}));
   const managers = ok(await admin('/staff?storeId=' + store.id)).filter(row => row.staff_role === 'MANAGER'); assert.equal(managers.length, 2);
   const disable = {role: 'MANAGER', active: 0}, demote = {role: 'CLERK', active: 1};
@@ -239,6 +242,93 @@ async function test() {
     await concurrentStaffChanges(admin, store, managers, changes);
   }
   pass('deterministic simultaneous deactivation, demotion and mixed requests always retain one active manager; rejected staff/role changes roll back');
+}
+
+async function verifyAdminFixes(admin, actors, stores, app, create, pay, detail) {
+  const store = stores[0];
+  const a = await create(), b = await create({items: [{productId: store.product.id, quantity: 2}]});
+  for (const order of [a, b]) {
+    await pay(order.id);
+    ok(await app('/orders/' + order.id + '/refund', {kind: 'FULL', reason: 'Review refund request'}));
+  }
+  const snapshotA = await admin('/orders/' + a.id); ok(snapshotA);
+  let releaseA, confirm, firstA = true;
+  const delayedA = new Promise(resolve => {releaseA = resolve;});
+  const confirmation = new Promise(resolve => {confirm = resolve;});
+  const page = component('admin/src/views/food/orders/index.vue', {
+    foodGet: async route => {
+      if (route === '/orders/' + a.id && firstA) {firstA = false; return delayedA;}
+      const result = await admin(route); ok(result); return result;
+    },
+    foodPost: async (route, body) => {const result = await admin(route, body); ok(result); return result;},
+    ElMessageBox: {confirm: text => {assert(text.includes((b.total / 100).toFixed(2))); return confirmation;}}
+  });
+  try {
+    const first = page.api.detail(a);
+    await page.api.detail(b);
+    page.api.refundReply.value = 'Approve only the selected order B';
+    const approval = page.api.resolveRefund('APPROVE');
+    releaseA(snapshotA); await first; confirm(); await approval;
+    const resultA = await detail(a.id), resultB = await detail(b.id);
+    assert.equal(resultA.refund_status, 'REQUESTED'); assert.equal(resultA.refunded_amount, 0);
+    assert.equal(resultB.refund_status, 'APPROVED'); assert.equal(resultB.refunded_amount, b.total);
+  } finally {page.close();}
+  pass('actual Vue refund confirmation with reordered responses approves only the selected order; other order remains unrefunded in MySQL');
+
+  const productPath = '/products/' + store.product.id + '/selling';
+  const product = () => admin('/catalog/products?storeId=' + store.id).then(ok).then(data => data.rows.find(p => p.id === store.product.id));
+  let p = await product();
+  const future = ownSql('SELECT DATE_ADD(NOW(),INTERVAL 1 HOUR)');
+  ok(await actors.MANAGER(productPath, {periods: '', soldOut: true, until: future, version: p.version}));
+  // Model the timer passing without a minute-long test sleep.
+  ownSql('UPDATE food_product SET sold_out_until=DATE_SUB(NOW(),INTERVAL 1 MINUTE) WHERE id=' + p.id);
+  p = await product();
+  const expired = p.sold_out_until;
+  for (const actor of [actors.CLERK, actors.KITCHEN]) denied(await actor(productPath, {periods: '', soldOut: false, until: expired, version: p.version}));
+  ok(await actors.MANAGER(productPath, {periods: '', soldOut: false, until: expired, version: p.version}));
+  let fresh = await product();
+  assert.equal(fresh.sold_out, 0); assert.equal(fresh.sold_out_until, null);
+  assert.match((await admin(productPath, {periods: '', soldOut: false, version: p.version})).msg, /菜品已变化/);
+  for (const [until, message] of [[expired, /必须晚于现在/], ['invalid date', /格式不正确/]]) {
+    const result = await admin(productPath, {periods: '', soldOut: true, until, version: fresh.version});
+    assert.notEqual(result.code, 200); assert.match(result.msg, message);
+  }
+  for (const until of [future, '']) {
+    ok(await admin(productPath, {periods: '', soldOut: true, until, version: fresh.version}));
+    fresh = await product(); assert.equal(fresh.sold_out, 1);
+    assert.equal(fresh.sold_out_until === null, until === '');
+  }
+  ok(await admin(productPath, {periods: '', soldOut: false, until: 'ignored hidden value', version: fresh.version}));
+  fresh = await product(); assert.equal(fresh.sold_out, 0); assert.equal(fresh.sold_out_until, null);
+  pass('expired sold-out settings can be disabled; enabled settings still validate dates; manual/future recovery, optimistic locking and role checks remain correct');
+
+  const stale = ok(await admin('/catalog/stores?q=Review%20primary')).rows[0];
+  ok(await admin('/stores', {...stale, delivery_fee: 800, notice: 'Concurrent store edit',
+    latitude: 31, longitude: 121, delivery_radius: 500, slot_limit: 7, kitchen_capacity: 4}));
+  const expected = ok(await admin('/catalog/stores?q=Review%20primary')).rows[0];
+  ok(await app('/stores/' + store.id)); // Populate the public cache before toggling.
+  const catalog = component('admin/src/views/food/Catalog.vue', {
+    foodGet: async route => {const result = await admin(route); ok(result); return result;},
+    foodPost: async (route, body) => {const result = await actors.MANAGER(route, body); ok(result); return result;},
+    ElMessageBox: {confirm: async () => {}}
+  }, {kind: 'stores'});
+  try {await catalog.api.toggle(stale);} finally {catalog.close();}
+  const current = ok(await admin('/catalog/stores?q=Review%20primary')).rows[0];
+  assert.equal(current.active, 0);
+  for (const [key, value] of Object.entries(expected)) {
+    if (!['active', 'open_now', 'updated_at'].includes(key)) assert.deepEqual(current[key], value, key);
+  }
+  assert.notEqual((await app('/stores/' + store.id)).code, 200, 'closed store must be evicted from public cache');
+  for (const body of [{}, {active: null}, {active: -1}, {active: 2}, {active: 1.5}]) {
+    assert.notEqual((await admin('/stores/' + store.id + '/active', body)).code, 200);
+  }
+  for (const actor of [actors.CLERK, actors.KITCHEN]) denied(await actor('/stores/' + store.id + '/active', {active: 1}));
+  denied(await actors.MANAGER('/stores/' + stores[1].id + '/active', {active: 0}));
+  assert.equal(ownSql('SELECT active FROM food_store WHERE id=' + store.id), '0');
+  ok(await admin('/stores/' + store.id + '/active', {active: 1}));
+  assert.equal(ok(await app('/stores/' + store.id)).delivery_fee, 800);
+  assert.equal(ownSql("SELECT COUNT(*) FROM food_staff_audit WHERE store_id=" + store.id + " AND action='STORE_EDIT' AND note IN ('开启营业','店铺休息')"), '2');
+  pass('actual Vue store toggle preserves concurrent fee, notice, coordinates and reservation edits; status validation, cache invalidation, audit and merchant scope verified');
 }
 
 (async () => { await setup(); await test(); })().catch(error => {
@@ -250,7 +340,7 @@ async function test() {
     if (ownsRedis) { const keys = redis('KEYS', '*').split(/\r?\n/).filter(Boolean); if (keys.length) redis('DEL', ...keys); }
     console.log('Temporary schema, server and Redis DB14 keys removed.');
     if (!process.exitCode) fs.writeFileSync('docs/review-regressions-test-report.json', JSON.stringify({
-      date: new Date().toISOString(), checks, scope: 'Local simulated API in a temporary schema and Redis DB14; actual Vue CSV action; deterministic MySQL lock contention.'
+      date: new Date().toISOString(), checks, scope: 'Local simulated API in a temporary schema and Redis DB14; actual Vue refund, store toggle and CSV actions; deterministic MySQL lock contention.'
     }, null, 2) + '\n');
   } catch (error) { console.error('Cleanup failed:', error); process.exitCode = 1; }
   finally { if (log !== undefined) fs.closeSync(log); }

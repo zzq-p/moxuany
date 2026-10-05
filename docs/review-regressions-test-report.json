@@ -1,9 +1,12 @@
 {
-  "date": "2026-10-04T15:40:00.540Z",
+  "date": "2026-10-05T04:42:39.410Z",
   "checks": [
     "all preparation-exit paths require COOK; kitchen, clerk completion, manager and platform permissions remain correct; cross-store access denied",
     "report and actual CSV totals reconcile for unpaid, cancelled, paid, discounted partial-refund and full-refund orders; merchant scope preserved",
+    "actual Vue refund confirmation with reordered responses approves only the selected order; other order remains unrefunded in MySQL",
+    "expired sold-out settings can be disabled; enabled settings still validate dates; manual/future recovery, optimistic locking and role checks remain correct",
+    "actual Vue store toggle preserves concurrent fee, notice, coordinates and reservation edits; status validation, cache invalidation, audit and merchant scope verified",
     "deterministic simultaneous deactivation, demotion and mixed requests always retain one active manager; rejected staff/role changes roll back"
   ],
-  "scope": "Local simulated API in a temporary schema and Redis DB14; actual Vue CSV action; deterministic MySQL lock contention."
+  "scope": "Local simulated API in a temporary schema and Redis DB14; actual Vue refund, store toggle and CSV actions; deterministic MySQL lock contention."
 }
