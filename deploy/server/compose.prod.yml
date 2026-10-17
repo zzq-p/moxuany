@@ -1,0 +1,173 @@
+# ============================================================
+# 青禾校园点餐 —— 生产编排（2 核 2G 调优版）
+#
+# 只跑 MySQL、Redis、后端三个容器；Nginx 装在宿主机上
+# （省掉一层容器开销，用 apt/yum 装、证书续期也更简单）。
+#
+# 所有端口都只绑 127.0.0.1，外部唯一入口是宿主机的 Nginx。
+# 云服务器安全组只需要放行 22 / 80 / 443。
+#
+# 内存预算（2G 机器）：
+#   系统+ssh 200M | docker 120M | MySQL 400M | Redis 150M
+#   后端 JVM 700M | Nginx 20M   →  合计约 1.6G，余量靠 swap 兜底
+# ============================================================
+name: moxuany
+
+services:
+
+  # ---------------------------------------------------------- MySQL
+  mysql:
+    image: mysql:8.4
+    container_name: moxuany-mysql
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 中设置 MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-moxuany}
+      MYSQL_USER: ${MYSQL_USER:-moxuany}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请在 .env 中设置 MYSQL_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql/my.cnf:/etc/mysql/conf.d/99-moxuany.cnf:ro
+    ports:
+      - "127.0.0.1:3306:3306"
+    # 上限只作保险丝：调优后实际占用约 400M，超出被 kill 好过拖垮整机
+    mem_limit: 700m
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+
+  # ---------------------------------------------------------- Redis
+  # 业务使用 DB 1（见 application-food.yml），存会话、限流计数、目录缓存。
+  # 策略保持 noeviction：内存满了宁可写失败，也不能静默淘汰会话把人踢下线。
+  redis:
+    image: redis:8
+    container_name: moxuany-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - "128mb"
+      - --maxmemory-policy
+      - noeviction
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - redis-data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    mem_limit: 320m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  # ---------------------------------------------------------- 后端
+  backend:
+    build:
+      context: ./backend
+    image: moxuany-backend:latest
+    container_name: moxuany-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+      PORT: "8080"
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-moxuany}
+      MYSQL_USER: ${MYSQL_USER:-moxuany}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请在 .env 中设置 MYSQL_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      TOKEN_SECRET: ${TOKEN_SECRET:?请在 .env 中设置 TOKEN_SECRET}
+      FOOD_UPLOAD_PATH: /app/uploads
+      FOOD_DEMO_ENABLED: ${FOOD_DEMO_ENABLED:-false}
+      FOOD_WEB_LOGIN_ENABLED: ${FOOD_WEB_LOGIN_ENABLED:-true}
+      FOOD_MOCK_PAYMENT_ENABLED: ${FOOD_MOCK_PAYMENT_ENABLED:-true}
+      WECHAT_APPID: ${WECHAT_APPID:-}
+      WECHAT_SECRET: ${WECHAT_SECRET:-}
+      FOOD_SUBSCRIPTIONS_ENABLED: ${FOOD_SUBSCRIPTIONS_ENABLED:-false}
+      FOOD_MESSAGE_ENVIRONMENT: ${FOOD_MESSAGE_ENVIRONMENT:-formal}
+      BAIDU_MAP_AK: ${BAIDU_MAP_AK:-}
+      # 小内存 JVM 参数：
+      #   -Xmx512m / SerialGC  → 堆小、GC 线程少，2 核上反而更省
+      #   -Xss512k             → 每个线程栈减半，Tomcat 默认 200 线程很吃内存
+      #   MaxMetaspace 192m    → 若依类多，给够但设上限
+      #   ExitOnOutOfMemoryError → OOM 直接退出让 docker 重启，避免半死不活
+      JAVA_OPTS: >-
+        -Xms256m -Xmx512m
+        -XX:MaxMetaspaceSize=192m
+        -XX:ReservedCodeCacheSize=64m
+        -Xss512k
+        -XX:+UseSerialGC
+        -XX:+ExitOnOutOfMemoryError
+        -Dfile.encoding=UTF-8
+        -Duser.timezone=Asia/Shanghai
+        -Dspring.devtools.restart.enabled=false
+    # application-food.yml 里 Tomcat 默认 max=200 / min-spare=20，
+    # 2G 机器上按 100 / 10 覆盖（走命令行参数，不改源码）。
+    command:
+      - --spring.profiles.active=druid,food
+      - --server.tomcat.threads.max=100
+      - --server.tomcat.threads.min-spare=10
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      # 菜品/店铺图片，需要持久化并纳入备份
+      - ./data/uploads:/app/uploads
+      # 售后举证图片（FoodEvidence 写在 uploads 的兄弟目录），必须持久化并备份
+      - ./data/food-evidence:/app/food-evidence
+      # 日志落在 logback.xml 配置的 ./.runtime/logs
+      - ./data/logs:/app/.runtime/logs
+    mem_limit: 900m
+    healthcheck:
+      # /food/app/config 是 @Anonymous 公开接口，无需登录，适合探活
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/food/app/config || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+
+  # ---------------------------------------------------------- 一次性迁移
+  # 用 profile 隔离，不会随 up -d 启动；由 deploy.sh 在启动后端【之前】显式执行。
+  #   docker compose --profile migrate run --rm migrate
+  migrate:
+    image: mysql:8.4
+    profiles: ["migrate"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-moxuany}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 中设置 MYSQL_ROOT_PASSWORD}
+      MYSQL_ROOT_USER: root
+      SQL_DIR: /sql
+    volumes:
+      - ./sql:/sql:ro
+      - ./mysql/migrate.sh:/migrate.sh:ro
+    entrypoint: ["bash", "/migrate.sh"]
+    restart: "no"
+
+volumes:
+  mysql-data:
+  redis-data:

@@ -5,9 +5,11 @@ let base=import.meta.env.VITE_API_BASE || ''
 base=import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8080'
 // #endif
 export const money=n=>(Number(n||0)/100).toFixed(2).replace(/\.00$/,'')
-export const state=reactive({memberId:0,token:uni.getStorageSync('food-token')||'',demoCredential:uni.getStorageSync('food-demo-credential')||'',signedOut:!!uni.getStorageSync('food-signed-out'),authRevision:0,config:{demoEnabled:false}})
+export const state=reactive({memberId:0,token:uni.getStorageSync('food-token')||'',demoCredential:uni.getStorageSync('food-demo-credential')||'',signedOut:!!uni.getStorageSync('food-signed-out'),authRevision:0,config:{demoEnabled:false,mockPayment:true,webLoginEnabled:true,captchaEnabled:false}})
 export const intents=createIntentManager({get:k=>uni.getStorageSync(k),set:(k,v)=>uni.setStorageSync(k,v),remove:k=>uni.removeStorageSync(k)})
 function activateMember(memberId){intents.select(memberId);state.memberId=memberId}
+export const LOGIN_REQUIRED='WEB_LOGIN_REQUIRED'
+export const isLoginRequired=e=>!!e&&e.code===LOGIN_REQUIRED
 function normalizeAssets(data){if(Array.isArray(data))return data.map(normalizeAssets);if(data&&typeof data==='object'){for(const [k,v] of Object.entries(data)){if((k==='image'||k==='store_image')&&typeof v==='string'&&v.startsWith('/profile/'))data[k]=base+v;else if(v&&typeof v==='object')normalizeAssets(v)}}return data}
 export function request(path,method='GET',data,quiet=false,token=state.token){
  return new Promise((resolve,reject)=>uni.request({url:base+'/food/app'+path,method,data,timeout:10000,header:{'X-Food-Token':token},success:({data:res,statusCode})=>{
@@ -23,15 +25,38 @@ export function request(path,method='GET',data,quiet=false,token=state.token){
  },fail:()=>{const error=new Error('连接失败，请检查服务和网络');if(!quiet)uni.showToast({title:error.message,icon:'none'});reject(error)}}))
 }
 let loginAttempt
+function acceptSession(result){
+ state.token=result.token;activateMember(result.memberId);state.signedOut=false
+ uni.removeStorageSync('food-signed-out');uni.setStorageSync('food-token',result.token)
+ if(result.demoCredential){state.demoCredential=result.demoCredential;uni.setStorageSync('food-demo-credential',result.demoCredential)}
+ else{state.demoCredential='';uni.removeStorageSync('food-demo-credential')}
+ return result
+}
+export function loadConfig(){return request('/config','GET',null,true).then(c=>{state.config=c;return c})}
+export function loadCaptcha(){return request('/captcha', 'GET', null, true)}
+export function webLogin({account,password,captchaCode,captchaUuid}){
+ return request('/login','POST',{mode:'web',account,password,captchaCode:captchaCode||'',captchaUuid:captchaUuid||''},true).then(acceptSession)
+}
+export function webRegister({account,password,nickname,inviteCode,captchaCode,captchaUuid}){
+ return request('/register','POST',{account,password,nickname:nickname||'',inviteCode,captchaCode:captchaCode||'',captchaUuid:captchaUuid||''},true).then(acceptSession)
+}
+function currentPath(){const pages=getCurrentPages();const page=pages[pages.length-1];if(!page)return '';const options=page.options||{};const query=Object.keys(options).map(k=>k+'='+encodeURIComponent(options[k])).join('&');return '/'+page.route+(query?'?'+query:'')}
+let loginOpening=false
+export function openLogin(redirect){
+ if(loginOpening)return
+ loginOpening=true;setTimeout(()=>{loginOpening=false},800)
+ const target=redirect||currentPath();const url='/pages/login/index'+(target?'?redirect='+encodeURIComponent(target):'')
+ uni.navigateTo({url,fail:()=>uni.reLaunch({url})})
+}
 export function login(){if(!loginAttempt){const attempt=performLogin(state.authRevision).finally(()=>{if(loginAttempt===attempt)loginAttempt=null});loginAttempt=attempt}return loginAttempt}
 async function performLogin(revision){state.config=await request('/config');if(revision!==state.authRevision)throw Error('登录已取消');let payload={mode:'demo',...(uni.getStorageSync('food-demo-credential')?{demoCredential:uni.getStorageSync('food-demo-credential')}:{})};if(!state.config.demoEnabled){
 // #ifdef MP-WEIXIN
  const result=await new Promise((resolve,reject)=>uni.login({provider:'weixin',success:resolve,fail:reject}));payload={code:result.code};
 // #endif
 // #ifdef H5
- throw new Error('请在微信小程序中登录');
+ const error=new Error('请先登录');error.code=LOGIN_REQUIRED;throw error;
 // #endif
-}if(revision!==state.authRevision)throw Error('登录已取消');const result=await request('/login','POST',payload);if(revision!==state.authRevision){request('/logout','POST',null,true,result.token).catch(()=>{});throw Error('登录已取消')}state.token=result.token;activateMember(result.memberId);state.signedOut=false;uni.removeStorageSync('food-signed-out');uni.setStorageSync('food-token',result.token);if(result.demoCredential){state.demoCredential=result.demoCredential;uni.setStorageSync('food-demo-credential',result.demoCredential)}return result}
+}if(revision!==state.authRevision)throw Error('登录已取消');const result=await request('/login','POST',payload);if(revision!==state.authRevision){request('/logout','POST',null,true,result.token).catch(()=>{});throw Error('登录已取消')}return acceptSession(result)}
 export async function ensureLogin(){if(!state.token){if(state.signedOut)throw Error('已退出登录，请前往“我的”点击登录');await login()}}
 export async function logout(){
  const token=state.token,credential=state.demoCredential;state.authRevision++;loginAttempt=null

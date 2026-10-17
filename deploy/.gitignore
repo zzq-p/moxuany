@@ -1,0 +1,12 @@
+# 本目录用于部署。模板与脚本要提交，密钥和构建产物不提交。
+
+# 由 local/build-and-pack.ps1 生成的部署包与临时构建目录
+dist/
+.build/
+
+# 真实的密钥文件（.env.production.example 是模板，必须提交）
+server/.env
+
+# 根目录 .gitignore 里的 ".env.*" 会误伤模板，这里显式放行。
+# 子目录的规则优先级高于父目录，所以这条能生效。
+!server/.env.production.example

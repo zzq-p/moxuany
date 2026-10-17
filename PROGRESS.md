@@ -1,5 +1,27 @@
 # 点餐小程序进度存档
 
+## 2026-10-17 网站注册登录、邀请码、/admin/ 迁移与生产部署包
+
+按已确认方向完成“公开网站”：域名根路径 `/` 即点餐前台，管理后台迁到同域 `/admin/`；顾客用“用户名 + 密码 + 图片验证码 + 一次性邀请码”注册，登录按 IP 与账号限流。模拟支付与演示登录解耦，`FOOD_DEMO_ENABLED=false` 时网站仍可下单并模拟支付。服务器尚未购买，本轮在本机完成实现与验收，产出可直接上传的部署包。
+
+数据库沿用“基础 SQL + 幂等增量”：`food_member` 增加 `account`、`password_hash` 与唯一索引（NULL 允许多行，保留微信用户）；新增 `food_invite_code`（一次性占用、可过期）；邀请码菜单使用 `2112`（原计划 `2106` 已被配送工作台占用），本地升级脚本与生产迁移均按 `parent_id=2100 AND path='invites'` 守卫并自动分配 ID，重复执行安全。
+
+后端新增 `FoodWebAuth`：Kaptcha 验证码（2 分钟、忽略大小写、校验即删除防重放）、BCrypt 密码、事务内“插会员 + 抢邀请码 + 发新人券”，抢码失败整体回滚；密码错误返回业务错误而非 401（避免 H5 清 token）。管理端新增邀请码列表/生成（12 位无歧义字符、1–50 个、0–365 天）与会员账号列。H5 新增登录/注册页，个人中心、订单、结算、地址、收藏等入口在正式模式下跳转登录并回跳；小程序微信登录链路未改动。
+
+管理后台生产 `base` 改为 `/admin/`，路由、重新登录跳转、favicon 与静态资源均随 base 调整；新增邀请码页面。Nginx 模板与部署脚本同步改为 H5 在 `/`、后台在 `/admin/`，`/h5` 旧链接 301 回 `/`，并修复 `/prod-api` 前缀绕过 Swagger/Druid 封禁的问题；`deploy.sh` 默认不覆盖已有 Nginx 配置（`--refresh-nginx` 才备份刷新，保留手工 TLS），强制要求两套前端产物，创建并持久化 `data/food-evidence`；备份/恢复同时包含 `uploads` 与 `food-evidence`。
+
+验证结果：
+
+- `scripts/test-web-login.cjs`：13 项通过（验证码开关/错误/单次使用、邀请码边界与并发抢占、弱密码、重复账号、过期码、错误密码非 401、账号限流 429、登出失效、管理员列表）。
+- `scripts/test-web-formal.cjs`（`FOOD_DEMO_ENABLED=false`）：3 项通过（演示登录关闭、网站注册登录、下单并模拟支付成功）。
+- 回归：`test-checkout-regressions.mjs` 16 项、`test-session-boundaries.mjs` 4 项、`test-experience.cjs` 5 项通过。
+- Java（`mvn package -DskipTests`）、后台、H5、微信小程序均构建通过；后台产物资源前缀为 `/admin/static/`。
+- 生产构建浏览器验收（`.runtime/preview-server.cjs` 模拟 Nginx 路由，正式模式）：H5 邀请码注册→登录态个人中心、全新浏览器账号密码登录、后台 `/admin/` 登录、邀请码页面无控制台错误、界面生成邀请码，共 5 项通过；截图 `docs/web-register-preview.png`、`docs/web-login-preview.png`、`docs/admin-invites-preview.png`，报告 `docs/web-acceptance-report.json`。
+
+部署包：`deploy/dist/moxuany-20261017-212723.tar.gz`（79.4 MB），含 H5、后台、后端 jar、SQL、Nginx 模板与部署/备份/恢复脚本；包内 `.env` 已设为 `FOOD_DEMO_ENABLED=false`、`FOOD_MOCK_PAYMENT_ENABLED=true`、`FOOD_WEB_LOGIN_ENABLED=true`，域名占位 `order.example.com`，上线前需改写。`.env`、`deploy/dist/` 均被忽略，未提交；数据库密码与 `TOKEN_SECRET` 为随机生成，重新打包会复用 `deploy/server/.env`。部署步骤见 `deploy/README.md`。
+
+未完成/边界：服务器未购买、未实际上线；真实微信支付/退款仍未接入（模拟支付）；无找回密码、短信/邮件；微信真机与真实域名 HTTPS 未验证。邀请菜单 ID 已避开 `2106`，不要再改回。
+
 ## 2026-09-30 消息、出餐、部分退款、售卖、收藏与员工
 
 已实现六项功能，入口及规则见 `docs/EXPERIENCE.md`；迁移 `07-service-experience.sql` 幂等增表增字段。用户明确尚无微信模板，先完成可配置功能，默认不启用真实发送。通知事务入队、独立发送、模板映射、授权和发送日志已接通；未知发送结果不自动重发。售后图片私有保存，按实付分摊部分退款，库存、积分、销量、实收和CSV同步调整。旧商家账号默认店长，接单员/后厨限制在后端检查。

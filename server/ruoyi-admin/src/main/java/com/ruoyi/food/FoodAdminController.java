@@ -6,15 +6,17 @@ import com.ruoyi.common.enums.BusinessType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import java.security.SecureRandom;
 import java.util.*;
 import org.springframework.transaction.annotation.Transactional;
+import com.ruoyi.common.utils.SecurityUtils;
 import static com.ruoyi.food.FoodSupport.*;
 
 @RestController
 @RequestMapping("/food/admin")
 @PreAuthorize("@ss.hasPermi('food:manage')")
 public class FoodAdminController {
- private final JdbcTemplate db;private final FoodOrders orders;private final FoodSupport support;private final FoodScope scope;private final FoodMerchantAccounts accounts;private final FoodOptions options;private final FoodRefunds refunds;private final FoodReviews reviews;private final FoodReservationStock reservations;@org.springframework.beans.factory.annotation.Value("${food.demo-enabled:false}") private boolean demo;
+ private final JdbcTemplate db;private final FoodOrders orders;private final FoodSupport support;private final FoodScope scope;private final FoodMerchantAccounts accounts;private final FoodOptions options;private final FoodRefunds refunds;private final FoodReviews reviews;private final FoodReservationStock reservations;@org.springframework.beans.factory.annotation.Value("${food.demo-enabled:false}") private boolean demo;@org.springframework.beans.factory.annotation.Value("${food.mock-payment-enabled:true}") private boolean mockPayment;
  public FoodAdminController(JdbcTemplate db,FoodOrders orders,FoodSupport support,FoodScope scope,FoodMerchantAccounts accounts,FoodOptions options,FoodRefunds refunds,FoodReviews reviews,FoodReservationStock reservations){this.reviews=reviews;this.reservations=reservations;this.options=options;this.refunds=refunds;this.db=db;this.orders=orders;this.support=support;this.scope=scope;this.accounts=accounts;}
  @GetMapping("/scope") public AjaxResult scope(){return AjaxResult.success(Map.of("platform",scope.platform(),"stores",scope.permissions()));}
  @GetMapping("/overview") public AjaxResult overview(){scope.managerOnly();Map<String,Object> data=new HashMap<>();String condition=scope.condition("store_id");data.put("today",db.queryForMap("SELECT COUNT(*) orders,COALESCE(SUM(IF(status NOT IN ('UNPAID','CANCELLED','REFUNDED'),total-refunded_amount,0)),0) revenue,COALESCE(SUM(status='PENDING'),0) pending FROM food_order WHERE created_at>=CURRENT_DATE AND "+condition));data.put("members",scope.platform()?db.queryForObject("SELECT COUNT(*) FROM food_member",Integer.class):db.queryForObject("SELECT COUNT(DISTINCT member_id) FROM food_order WHERE "+condition,Integer.class));data.put("stores",db.queryForObject("SELECT COUNT(*) FROM food_store WHERE active=1 AND "+scope.condition("id"),Integer.class));data.put("trend",db.queryForList("SELECT DATE(created_at) day,COUNT(*) orders,COALESCE(SUM(IF(status NOT IN ('UNPAID','CANCELLED','REFUNDED'),total-refunded_amount,0)),0) revenue FROM food_order WHERE created_at>=DATE_SUB(CURRENT_DATE,INTERVAL 6 DAY) AND "+condition+" GROUP BY DATE(created_at) ORDER BY day"));data.put("popular",db.queryForList("SELECT name,sales,stock FROM food_product WHERE "+condition+" ORDER BY sales DESC LIMIT 5"));return AjaxResult.success(data);}
@@ -61,8 +63,8 @@ public class FoodAdminController {
  }
  @GetMapping("/products/{id}/options") public AjaxResult options(@PathVariable long id){scope.store(db.queryForObject("SELECT store_id FROM food_product WHERE id=?",Long.class,id));return AjaxResult.success(options.list(id));}
  @Log(title="菜品规格加料",businessType=BusinessType.UPDATE) @PostMapping("/products/{id}/options") public AjaxResult options(@PathVariable long id,@RequestBody List<Map<String,Object>> rows){scope.store(db.queryForObject("SELECT store_id FROM food_product WHERE id=?",Long.class,id));scope.permit(db.queryForObject("SELECT store_id FROM food_product WHERE id=?",Long.class,id),"CATALOG");options.save(id,rows);scope.audit(db.queryForObject("SELECT store_id FROM food_product WHERE id=?",Long.class,id),"OPTIONS_EDIT",Long.toString(id),"修改规格加料");return AjaxResult.success();}
- @Log(title="商家缺货退单",businessType=BusinessType.UPDATE) @PostMapping("/orders/{id}/reject") public AjaxResult reject(@PathVariable String id,@RequestBody Map<String,String> body){require(demo,"当前仅支持模拟退款");long store=scope.permitOrder(id,"REFUND");refunds.merchantCancel(id,body.get("reason"));scope.audit(store,"MERCHANT_REFUND",id,body.get("reason"));return AjaxResult.success();}
- @Log(title="模拟退款审核",businessType=BusinessType.UPDATE) @PostMapping("/orders/{id}/refund") public AjaxResult refund(@PathVariable String id,@RequestBody Map<String,String> body){require(demo,"当前仅支持模拟退款");long store=scope.permitOrder(id,"REFUND");refunds.resolve(id,body.get("refundId"),body.get("decision"),body.get("reply"));scope.audit(store,"REFUND_REVIEW",id,body.get("decision")+"："+body.get("reply"));return AjaxResult.success();}
+ @Log(title="商家缺货退单",businessType=BusinessType.UPDATE) @PostMapping("/orders/{id}/reject") public AjaxResult reject(@PathVariable String id,@RequestBody Map<String,String> body){require(mockPayment,"当前仅支持模拟退款");long store=scope.permitOrder(id,"REFUND");refunds.merchantCancel(id,body.get("reason"));scope.audit(store,"MERCHANT_REFUND",id,body.get("reason"));return AjaxResult.success();}
+ @Log(title="模拟退款审核",businessType=BusinessType.UPDATE) @PostMapping("/orders/{id}/refund") public AjaxResult refund(@PathVariable String id,@RequestBody Map<String,String> body){require(mockPayment,"当前仅支持模拟退款");long store=scope.permitOrder(id,"REFUND");refunds.resolve(id,body.get("refundId"),body.get("decision"),body.get("reply"));scope.audit(store,"REFUND_REVIEW",id,body.get("decision")+"："+body.get("reply"));return AjaxResult.success();}
  @GetMapping("/orders") public AjaxResult orders(@RequestParam(defaultValue="1") int page,@RequestParam(defaultValue="") String status){int offset=(Math.min(Math.max(page,1),10000)-1)*20;String filter=" WHERE "+scope.condition("o.store_id")+(status.isBlank()?"":status.equals("AFTERSALE")?" AND o.refund_status='REQUESTED'":" AND o.status=?");List<Object> a=new ArrayList<>();if(!status.isBlank()&&!status.equals("AFTERSALE"))a.add(status);long count=db.queryForObject("SELECT COUNT(*) FROM food_order o"+filter,Long.class,a.toArray());a.add(offset);List<Map<String,Object>> rows=db.queryForList("SELECT o.*,s.name store_name FROM food_order o JOIN food_store s ON s.id=o.store_id"+filter+" ORDER BY o.created_at DESC,o.id DESC LIMIT 20 OFFSET ?",a.toArray());return AjaxResult.success(Map.of("rows",rows.stream().map(FoodOrders::merchantView).toList(),"total",count));}
  @GetMapping("/order-alerts") public AjaxResult alerts(){
    String where=" WHERE o.status='PENDING' AND o.refund_status<>'REQUESTED' AND (o.prepare_at IS NULL OR o.prepare_at<=NOW()) AND "+scope.condition("o.store_id");
@@ -87,7 +89,39 @@ public class FoodAdminController {
  @Log(title="商家回复评价",businessType=BusinessType.UPDATE) @PostMapping("/orders/{id}/review-reply") public AjaxResult reviewReply(@PathVariable String id,@RequestBody Map<String,String> body){scope.permitOrder(id,"REPLY");reviews.reply(id,body.get("reply"));return AjaxResult.success();}
  @GetMapping("/reviews") public AjaxResult reviews(@RequestParam(defaultValue="1") int page){require(page>=1&&page<=10000,"页码不合法");String where=" WHERE "+scope.condition("r.store_id");return AjaxResult.success(Map.of("rows",db.queryForList("SELECT r.*,s.name store_name,m.nickname FROM food_review r JOIN food_store s ON s.id=r.store_id JOIN food_member m ON m.id=r.member_id"+where+" ORDER BY r.id DESC LIMIT 20 OFFSET ?",(page-1)*20),"total",db.queryForObject("SELECT COUNT(*) FROM food_review r"+where,Long.class)));}
  @Log(title="取餐验码核销",businessType=BusinessType.UPDATE) @PostMapping("/orders/{id}/verify-pickup") public AjaxResult pickup(@PathVariable String id,@RequestBody Map<String,String> body){long store=scope.permitOrder(id,"PICKUP");support.limit("pickup:"+com.ruoyi.common.utils.SecurityUtils.getUserId()+":"+id,10,60);orders.verifyPickup(id,body.get("code"));scope.audit(store,"PICKUP_VERIFY",id,"取餐核销");return AjaxResult.success();}
- @GetMapping("/members") public AjaxResult members(){scope.platformOnly();return AjaxResult.success(db.queryForList("SELECT id,nickname,points,created_at FROM food_member ORDER BY id DESC LIMIT 500"));}
+ @GetMapping("/members") public AjaxResult members(){scope.platformOnly();return AjaxResult.success(db.queryForList("SELECT id,account,nickname,points,created_at FROM food_member ORDER BY id DESC LIMIT 500"));}
+ @GetMapping("/invites") public AjaxResult invites(@RequestParam(defaultValue="1") int page,@RequestParam(defaultValue="") String status){
+   scope.platformOnly();require(page>=1&&page<=10000,"页码不合法");
+   require(status.isEmpty()||Set.of("UNUSED","USED","EXPIRED").contains(status),"无效状态");
+   String where=switch(status){case "UNUSED"->" WHERE i.used_by IS NULL AND (i.expires_at IS NULL OR i.expires_at>NOW())";
+     case "USED"->" WHERE i.used_by IS NOT NULL";case "EXPIRED"->" WHERE i.used_by IS NULL AND i.expires_at IS NOT NULL AND i.expires_at<=NOW()";default->"";};
+   long total=db.queryForObject("SELECT COUNT(*) FROM food_invite_code i"+where,Long.class);
+   var summary=db.queryForMap("SELECT COALESCE(SUM(used_by IS NULL AND (expires_at IS NULL OR expires_at>NOW())),0) unused,"
+     +"COALESCE(SUM(used_by IS NOT NULL),0) used,COALESCE(SUM(used_by IS NULL AND expires_at IS NOT NULL AND expires_at<=NOW()),0) expired FROM food_invite_code");
+   var rows=db.queryForList("SELECT i.code,i.note,i.created_by,i.created_at,i.expires_at,i.used_by,i.used_at,m.account used_account,m.nickname used_nickname "
+     +"FROM food_invite_code i LEFT JOIN food_member m ON m.id=i.used_by"+where+" ORDER BY i.created_at DESC,i.code DESC LIMIT 50 OFFSET ?",(page-1)*50);
+   return AjaxResult.success(Map.of("rows",rows,"total",total,"summary",summary));
+ }
+ @Log(title="生成邀请码",businessType=BusinessType.INSERT)
+ @Transactional @PostMapping("/invites") public AjaxResult createInvites(@RequestBody Map<String,Object> body){
+   scope.platformOnly();
+   int count=integer(body,"count",1,50),days=body.get("expiresInDays")==null?7:integer(body,"expiresInDays",0,365);
+   String note=str(body,"note",100,false);
+   String alphabet="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";SecureRandom random=new SecureRandom();
+   java.sql.Timestamp expires=days==0?null:new java.sql.Timestamp(System.currentTimeMillis()+days*86400000L);
+   List<String> codes=new ArrayList<>();
+   for(int i=0;i<count;i++){
+     boolean inserted=false;
+     for(int attempt=0;attempt<8&&!inserted;attempt++){
+       StringBuilder sb=new StringBuilder(12);for(int j=0;j<12;j++)sb.append(alphabet.charAt(random.nextInt(alphabet.length())));
+       String code=sb.toString();
+       try{db.update("INSERT INTO food_invite_code(code,note,created_by,expires_at) VALUES(?,?,?,?)",code,note,SecurityUtils.getUserId(),expires);codes.add(code);inserted=true;}
+       catch(org.springframework.dao.DuplicateKeyException ignored){/* regenerate */}
+     }
+     require(inserted,"邀请码生成失败，请重试");
+   }
+   return AjaxResult.success(Map.of("codes",codes));
+ }
  @GetMapping("/feedback") public AjaxResult feedback(){scope.platformOnly();return AjaxResult.success(db.queryForList("SELECT * FROM food_feedback ORDER BY id DESC LIMIT 500"));}
  @Log(title="回复点餐反馈",businessType=BusinessType.UPDATE)
  @PostMapping("/feedback/{id}") public AjaxResult reply(@PathVariable long id,@RequestBody Map<String,Object> body){scope.platformOnly();require(db.update("UPDATE food_feedback SET reply=? WHERE id=?",str(body,"reply",1000,true),id)==1,"反馈不存在");return AjaxResult.success();}

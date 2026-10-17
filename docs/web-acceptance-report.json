@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-17T13:27:06.312Z",
+  "checks": [
+    "H5 registration with invite lands on signed-in profile",
+    "H5 username/password login in a fresh browser",
+    "admin login and invite page under /admin/",
+    "admin invite generation dialog"
+  ],
+  "screenshots": [
+    "docs/web-register-preview.png",
+    "docs/web-login-preview.png",
+    "docs/admin-invites-preview.png"
+  ]
+}

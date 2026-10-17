@@ -1,5 +1,5 @@
 import {ref,watch} from 'vue'
-import {state,request,ensureLogin,login} from './api'
+import {state,request,ensureLogin,login,openLogin,isLoginRequired} from './api'
 
 // Keep member-only page data and responses scoped to the session that loaded them.
 export function useMemberPage(fetchData,applyData,reset){
@@ -22,13 +22,13 @@ export function useMemberPage(fetchData,applyData,reset){
    session=context();loading.value=true
    const data=await fetchData(session.request)
    if(ticket===version&&session.current())applyData(data)
-  }catch(e){if(ticket===version&&revision===state.authRevision&&(!session||session.current()||!state.token))error.value=e.message||'加载失败，请重试'}
+  }catch(e){if(ticket===version&&revision===state.authRevision&&(!session||session.current()||!state.token)){if(!isLoginRequired(e))error.value=e.message||'加载失败，请重试'}}
   finally{if(ticket===version)loading.value=false}
  }
  async function signIn(){
   if(busy.value)return
   busy.value=true;error.value=''
-  try{await login();await load()}catch(e){error.value=e.message||'登录失败，请重试'}finally{busy.value=false}
+  try{await login();await load()}catch(e){if(isLoginRequired(e))openLogin();else error.value=e.message||'登录失败，请重试'}finally{busy.value=false}
  }
  async function run(action){
   if(busy.value)return

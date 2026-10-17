@@ -44,7 +44,8 @@ public class FoodMessages {
   if(db.queryForObject("SELECT COUNT(*) FROM food_message WHERE order_id=? AND event=? AND event_key=?",Integer.class,id,event,key)>0)return;
   var t=db.queryForMap("SELECT * FROM food_message_template WHERE event=?",event);String template=text(t,"template_id");
   boolean consent=db.queryForObject("SELECT COUNT(*) FROM food_subscription WHERE member_id=? AND order_id=? AND event=? AND template_id=?",Integer.class,o.get("member_id"),id,event,template)>0;
-  String skip=!configured()?"微信通知未配置":text(o,"openid").startsWith("demo:")?"演示账号不发送微信消息":number(t,"enabled")!=1?"模板未启用":!consent?"用户未订阅本次消息":"";
+  String openid=text(o,"openid");
+  String skip=!configured()?"微信通知未配置":openid.startsWith("demo:")?"演示账号不发送微信消息":openid.startsWith("web:")?"网站账号不发送微信消息":number(t,"enabled")!=1?"模板未启用":!consent?"用户未订阅本次消息":"";
   var values=Map.of("store",text(o,"store_name"),"status",status,"time",FoodSelling.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")),"amount",String.format(Locale.ROOT,"%.2f",amount/100.0),"order",id.substring(Math.max(0,id.length()-32)),"pickup",text(o,"pickup_code"));
   Map<String,Object> data=new LinkedHashMap<>();fields(text(t,"fields_json")).forEach((field,source)->{String value=values.get(source);int max=field.startsWith("thing")?20:field.startsWith("phrase")?5:field.startsWith("character_string")?32:100;data.put(field,Map.of("value",value.substring(0,Math.min(max,value.length()))));});
   var payload=Map.of("touser",text(o,"openid"),"template_id",template,"page","pages/order/index?id="+id,"miniprogram_state",Set.of("developer","trial","formal").contains(environment)?environment:"formal","data",data);

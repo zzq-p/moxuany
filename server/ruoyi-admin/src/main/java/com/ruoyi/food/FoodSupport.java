@@ -20,6 +20,13 @@ public class FoodSupport {
     private final JdbcTemplate db;
     public FoodSupport(StringRedisTemplate redis, ObjectMapper json, JdbcTemplate db) { this.redis=redis; this.json=json; this.db=db; }
     public static void require(boolean ok, String message) { if(!ok) throw new ServiceException(message); }
+    /** Nginx overwrites X-Real-IP with the peer address; the backend only binds to 127.0.0.1. */
+    public static String clientIp(HttpServletRequest request) {
+        String ip=request.getHeader("X-Real-IP");
+        if(ip==null||ip.isBlank()) return request.getRemoteAddr();
+        ip=ip.trim();
+        return ip.matches("[0-9a-fA-F:.]{2,45}")?ip:request.getRemoteAddr();
+    }
     public static long number(Map<String,Object> row,String key) { return ((Number)row.get(key)).longValue(); }
     public static String text(Map<String,Object> row,String key) { return Objects.toString(row.get(key),""); }
     public long member(HttpServletRequest request) {

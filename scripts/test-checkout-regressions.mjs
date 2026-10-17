@@ -19,7 +19,7 @@ function evaluate(source,env){return new Function(...Object.keys(env),source)(..
 function component(name,extra={}){
  const {descriptor}=compiler.parse(read('miniapp/src/pages/'+name+'/index.vue'))
  const source=withoutImports(compiler.compileScript(descriptor,{id:name}).content).replace('export default','return')
- const env={...vue,onShow(){},onHide(){},onUnload(){},onLoad(){},onReachBottom(){},PageHead:{},intents:{read:()=>null},cart:{storeId:1,items:[]},state:{memberId:1},key:()=> 'regression-key-000001',uni:{getStorageSync:()=>null},ensureLogin:async()=>{},memberIdentity:async()=>1,recoverOrder:async()=>false,openConfirmedOrder(){},orderSession:()=>({token:"test-token",memberId:1}),assertOrderSession(){},request:async()=>[],saveCart(){},clearCart(){},toast(){},go(){},money:x=>x,confirm:async()=>true,location:{},locationActions:{expire(){}},loadFavorites:async()=>{},isFavorite:()=>false,toggleFavorite(){},createPagedCatalog,queryString,configureProduct,lineKey,availableToAdd,reconcileCart,cartSignature,distanceMeters:()=>0,distanceText:()=>'',...extra}
+ const env={...vue,onShow(){},onHide(){},onUnload(){},onLoad(){},onReachBottom(){},PageHead:{},intents:{read:()=>null},cart:{storeId:1,items:[]},state:{memberId:1},key:()=> 'regression-key-000001',uni:{getStorageSync:()=>null},ensureLogin:async()=>{},isLoginRequired:()=>false,openLogin(){},memberIdentity:async()=>1,recoverOrder:async()=>false,openConfirmedOrder(){},orderSession:()=>({token:"test-token",memberId:1}),assertOrderSession(){},request:async()=>[],saveCart(){},clearCart(){},toast(){},go(){},money:x=>x,confirm:async()=>true,location:{},locationActions:{expire(){}},loadFavorites:async()=>{},isFavorite:()=>false,toggleFavorite(){},createPagedCatalog,queryString,configureProduct,lineKey,availableToAdd,reconcileCart,cartSignature,distanceMeters:()=>0,distanceText:()=>'',...extra}
  const scope=vue.effectScope()
  const bindings=scope.run(()=>evaluate(source,env).setup({}, {expose(){}}))
  function find(node){if(node.children?.some(c=>c.tag==='picker'))return node;for(const c of node.children||[]){const found=find(c);if(found)return found}}
@@ -214,7 +214,7 @@ for(const name of ['addresses','benefits']){
   return path==='/me'?{id:7,points:100}:path==='/addresses'?[{id:42,detail:'saved address'}]:[{id:1,title:'coupon'}]
  }
  const useMemberPage=evaluate(withoutImports(read('miniapp/src/lib/member-page.js')).replace(/\bexport /g,'')+'\nreturn useMemberPage',{
-  ...vue,state,request,ensureLogin:async()=>{if(!state.token)throw Error('已退出登录，请先登录')},login:async()=>{state.token='member-token';state.signedOut=false}
+  ...vue,state,request,isLoginRequired:()=>false,openLogin(){},ensureLogin:async()=>{if(!state.token)throw Error('已退出登录，请先登录')},login:async()=>{state.token='member-token';state.signedOut=false}
  })
  const storage=new Map(),page=component(name,{state,useMemberPage,confirm:()=>confirmation(),acquire:async()=>({latitude:1,longitude:1}),fromGcj02:x=>x,onLoad:fn=>onLoad=fn,uni:{getStorageSync:k=>storage.get(k),setStorageSync:(k,v)=>storage.set(k,v),removeStorageSync:k=>storage.delete(k),navigateBack(){}}})
  if(onLoad)onLoad({select:'1'})
@@ -367,6 +367,7 @@ console.log('PASS late checkout responses cannot overwrite another store, quanti
  staleCallback.success({statusCode:200,data:{code:200,data:{id:9}}});await stale
  assert.equal(api.state.memberId,8);assert.equal(api.intents.read().body.requestKey,'other-account-key')
  // Simulate startup with an existing token and an archived request from an older client.
+ api.loadConfig=async()=>{}
  api.state.token='persisted-token-7';api.state.memberId=0;memberId=7;holdMe=false
  const app=compiler.parse(read('miniapp/src/App.vue')).descriptor.script.content
  evaluate(withoutImports(app).replace('export default','return'),api).onLaunch();await vue.nextTick()

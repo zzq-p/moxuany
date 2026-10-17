@@ -1,0 +1,9 @@
+{
+  "date": "2026-10-17T13:26:56.523Z",
+  "checks": [
+    "formal mode: demo login is closed while website login and simulated payment stay enabled",
+    "invitation registration and automatic login succeed with demo mode off",
+    "website account can place and pay an order while demo login is disabled"
+  ],
+  "scope": "FOOD_DEMO_ENABLED=false local end-to-end, simulated payment."
+}

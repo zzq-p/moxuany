@@ -3,8 +3,21 @@ CREATE TABLE food_store_user (store_id BIGINT NOT NULL,user_id BIGINT NOT NULL U
 CREATE TABLE food_member (
  recovery_version BIGINT NOT NULL DEFAULT 0,
  id BIGINT PRIMARY KEY AUTO_INCREMENT, openid VARCHAR(100) NOT NULL UNIQUE,
+ account VARCHAR(50) NULL, password_hash VARCHAR(100) NULL,
  nickname VARCHAR(60) NOT NULL DEFAULT '校园食客', points INT NOT NULL DEFAULT 0,
- created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+ created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ UNIQUE KEY uk_member_account(account)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS food_invite_code (
+ code VARCHAR(24) PRIMARY KEY,
+ note VARCHAR(100) NOT NULL DEFAULT '',
+ created_by BIGINT NULL,
+ created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ expires_at DATETIME NULL,
+ used_by BIGINT NULL,
+ used_at DATETIME NULL,
+ INDEX idx_invite_used(used_by),
+ INDEX idx_invite_expires(expires_at)
 ) ENGINE=InnoDB;
 CREATE TABLE food_store (
  id BIGINT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(80) NOT NULL, category VARCHAR(40) NOT NULL,
@@ -89,6 +102,7 @@ INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_fra
 (2102,'商家管理',2100,2,'stores','food/stores/index',1,0,'C','0','0','food:manage','shop','admin',NOW()),
 (2103,'商品管理',2100,3,'products','food/products/index',1,0,'C','0','0','food:manage','shopping','admin',NOW()),
 (2104,'订单管理',2100,4,'orders','food/orders/index',1,0,'C','0','0','food:manage','list','admin',NOW()),
-(2105,'用户与反馈',2100,5,'members','food/members/index',1,0,'C','0','0','food:manage','user','admin',NOW());
+(2105,'用户与反馈',2100,5,'members','food/members/index',1,0,'C','0','0','food:manage','user','admin',NOW()),
+(2112,'邀请码',2100,12,'invites','food/invites/index',1,0,'C','0','0','food:manage','peoples','admin',NOW());
 INSERT INTO sys_role(role_id,role_name,role_key,role_sort,data_scope,status,create_by,create_time) VALUES(100,'商家管理员','food_merchant',3,'5','0','admin',NOW());
 INSERT INTO sys_role_menu(role_id,menu_id) VALUES(100,2100),(100,2101),(100,2102),(100,2103),(100,2104);

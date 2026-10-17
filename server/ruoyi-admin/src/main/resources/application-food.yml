@@ -32,6 +32,8 @@ logging:
     com.ruoyi: info
 food:
   demo-enabled: ${FOOD_DEMO_ENABLED:false}
+  web-login-enabled: ${FOOD_WEB_LOGIN_ENABLED:true}
+  mock-payment-enabled: ${FOOD_MOCK_PAYMENT_ENABLED:true}
   appid: ${WECHAT_APPID:}
   secret: ${WECHAT_SECRET:}
   subscriptions-enabled: ${FOOD_SUBSCRIPTIONS_ENABLED:false}

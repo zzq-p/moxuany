@@ -1,0 +1,187 @@
+# ============================================================
+# 青禾校园点餐 —— Nginx 站点配置（宿主机）
+#
+# 安装位置：/etc/nginx/conf.d/moxuany.conf
+# __SERVER_NAME__ 由 deploy.sh 从 .env 的 SERVER_NAME 替换。
+#
+# 路由分工（为什么必须这么配）：
+#   /             → 网站前台（uni-app H5），静态
+#   /admin/       → 管理端（总后台 + 商家后台），静态，Vite base=/admin/
+#   /prod-api/    → 后端。管理端 admin/.env.production 里写死 VITE_APP_BASE_API=/prod-api
+#   /food/        → 后端。H5 产物 base 为空串，请求直接打到同源 /food/app/**
+#   /profile/     → 后端。RuoYi 把上传目录映射在 /profile/**
+#   /assets/      → H5 产物的 hash 资源（绝对路径）
+#   /static/      → H5 产物的图片资源（种子数据里的 /static/food/*.jpg）
+#   /admin/static/→ 管理端产物的 hash 资源
+#
+# 站点目录（deploy.sh 从部署包同步）：
+#   /srv/moxuany/web/h5      网站前台
+#   /srv/moxuany/web/admin   管理端
+# ============================================================
+
+server {
+    listen      80;
+    listen      [::]:80;
+    server_name __SERVER_NAME__;
+
+    # 与 Spring 的 multipart 配置对齐（单文件 10MB / 总 20MB）
+    client_max_body_size 20m;
+
+    charset utf-8;
+    access_log /var/log/nginx/moxuany.access.log;
+    error_log  /var/log/nginx/moxuany.error.log warn;
+
+    # ---------- 网站前台（H5）----------
+    root  /srv/moxuany/web/h5;
+    index index.html;
+
+    # Vite 构建时开了 gzip 压缩，产物里带 .gz；有就直接发，减少 CPU 占用
+    gzip_static on;
+    gzip on;
+    gzip_min_length 1k;
+    gzip_comp_level 5;
+    gzip_types text/plain text/css application/json application/javascript
+               application/x-javascript text/xml application/xml image/svg+xml;
+
+    # H5 是 SPA，未命中的路径一律回落到 index.html
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # H5 的 hash 资源可以长期缓存
+    location ^~ /assets/ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+
+    # H5 静态图片（种子数据引用 /static/food/*.jpg）
+    location ^~ /static/ {
+        expires 7d;
+        add_header Cache-Control "public";
+        access_log off;
+    }
+
+    # ---------- 管理端（总后台 + 商家后台）----------
+    location = /admin { return 301 /admin/; }
+
+    location /admin/ {
+        root /srv/moxuany/web;
+        try_files $uri $uri/ /admin/index.html;
+    }
+
+    location /admin/static/ {
+        root /srv/moxuany/web;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+
+    # 旧版入口兼容：H5 曾在 /h5/ 下
+    location = /h5 { return 301 /; }
+    location /h5/ { return 301 /; }
+
+    # ---------- 后端 API（管理端）----------
+    location /prod-api/ {
+        proxy_pass http://127.0.0.1:8080/;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # 批量导入 CSV、报表导出可能偏慢
+        proxy_connect_timeout 10s;
+        proxy_read_timeout    120s;
+        proxy_send_timeout    120s;
+    }
+
+    # ---------- 网站接口（H5 端同源调用）----------
+    location /food/ {
+        proxy_pass http://127.0.0.1:8080/food/;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        # 覆盖客户端伪造的同名头，后端用它做登录/注册限流
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+
+    # ---------- 后台上传的图片 ----------
+    location /profile/ {
+        proxy_pass http://127.0.0.1:8080/profile/;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        expires 7d;
+        add_header Cache-Control "public";
+        access_log off;
+    }
+
+    # ---------- 生产环境关掉这些调试入口 ----------
+    # 后端 springdoc 是开启状态（application.yml: springdoc.swagger-ui.enabled=true），
+    # 接口文档会把全部接口和参数暴露出去，生产必须挡住。
+    # 需要临时查看时，把这两段注释掉再 nginx -s reload 即可。
+    # 第二段必须单独写：/prod-api/ 的 proxy_pass 会把前缀去掉，仅靠第一段挡不住。
+    location ~ ^/(v3/api-docs|swagger-ui|swagger-ui\.html|druid) {
+        deny all;
+        return 403;
+    }
+    location ~ ^/prod-api/(v3/api-docs|swagger-ui|swagger-ui\.html|druid) {
+        deny all;
+        return 403;
+    }
+
+    # 隐藏文件
+    location ~ /\. {
+        deny all;
+    }
+}
+
+# ============================================================
+# HTTPS（拿到证书后再启用）
+#
+# 微信小程序要求接口必须是 HTTPS + 已备案域名，所以正式上线前必须配置。
+#
+# 方式一：腾讯云免费 SSL 证书
+#   控制台申请 → 下载 Nginx 格式 → 上传到 /etc/nginx/ssl/
+#   然后启用下面的 443 server 块，并取消 80 端口块的 redirect。
+#
+# 方式二：certbot 自动签发（需要域名已解析到本机）
+#   apt install certbot python3-certbot-nginx
+#   certbot --nginx -d __SERVER_NAME__
+#
+# 提示：deploy.sh 默认不会覆盖已存在的 /etc/nginx/conf.d/moxuany.conf，
+# 所以启用 HTTPS 后可以放心重新部署。需要刷新模板时显式执行
+#   ./deploy.sh --refresh-nginx
+# （会先备份旧配置）。也可以把证书相关指令放到单独的
+# /etc/nginx/conf.d/moxuany-tls.conf，避免与站点模板混在一起。
+#
+# server {
+#     listen 443 ssl;
+#     listen [::]:443 ssl;
+#     http2 on;
+#     server_name __SERVER_NAME__;
+#
+#     ssl_certificate     /etc/nginx/ssl/__SERVER_NAME__.crt;
+#     ssl_certificate_key /etc/nginx/ssl/__SERVER_NAME__.key;
+#     ssl_protocols       TLSv1.2 TLSv1.3;
+#     ssl_ciphers         HIGH:!aNULL:!MD5;
+#     ssl_session_cache   shared:SSL:10m;
+#     ssl_session_timeout 10m;
+#
+#     # 下面整段与上面的 80 端口 server 块内容完全一致，
+#     # 直接复制过来即可（去掉 listen 80 / server_name 两行）。
+# }
+#
+# 启用 HTTPS 后，把 80 端口块改成只做跳转：
+#   server {
+#       listen 80;
+#       server_name __SERVER_NAME__;
+#       return 301 https://$host$request_uri;
+#   }
+#
+# 另外，微信公众平台还需提交：
+#   开发管理 → 开发设置 → 服务器域名 → request 合法域名 = https://__SERVER_NAME__
+# ============================================================

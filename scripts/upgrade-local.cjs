@@ -47,4 +47,9 @@ if(!sql("SELECT COUNT(*) FROM food_feature_migration WHERE name='service-experie
  sql("START TRANSACTION; UPDATE food_order SET refunded_amount=total WHERE status='REFUNDED'; UPDATE food_order_item i JOIN food_order o ON o.id=i.order_id SET i.refunded_quantity=i.quantity WHERE o.status='REFUNDED'; UPDATE food_order SET preparing_at=updated_at WHERE status='PREPARING'; INSERT INTO food_feature_migration(name) VALUES('service-experience-v1'); COMMIT;");
 }
 if(!sql("SHOW COLUMNS FROM food_member LIKE 'recovery_version'"))sql('ALTER TABLE food_member ADD COLUMN recovery_version BIGINT NOT NULL DEFAULT 0');
+if(!sql("SHOW COLUMNS FROM food_member LIKE 'account'"))sql('ALTER TABLE food_member ADD COLUMN account VARCHAR(50) NULL');
+if(!sql("SHOW COLUMNS FROM food_member LIKE 'password_hash'"))sql('ALTER TABLE food_member ADD COLUMN password_hash VARCHAR(100) NULL');
+if(!sql("SHOW INDEX FROM food_member WHERE Key_name='uk_member_account'"))sql('ALTER TABLE food_member ADD UNIQUE KEY uk_member_account(account)');
+sql("CREATE TABLE IF NOT EXISTS food_invite_code (code VARCHAR(24) PRIMARY KEY,note VARCHAR(100) NOT NULL DEFAULT '',created_by BIGINT NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,expires_at DATETIME NULL,used_by BIGINT NULL,used_at DATETIME NULL,INDEX idx_invite_used(used_by),INDEX idx_invite_expires(expires_at)) ENGINE=InnoDB");
+if(!sql("SELECT COUNT(*) FROM sys_menu WHERE parent_id=2100 AND path='invites'").match(/^1$/))sql("INSERT INTO sys_menu(menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_by,create_time) SELECT '邀请码',2100,12,'invites','food/invites/index',1,0,'C','0','0','food:manage','peoples','admin',NOW() FROM DUAL WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE parent_id=2100 AND path='invites')");
 console.log('Local schema is current');

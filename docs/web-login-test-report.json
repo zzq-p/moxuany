@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-17T13:21:27.997Z",
+  "checks": [
+    "config exposes web login, invite-only registration and mock payment",
+    "captcha is required, wrong/expired codes fail, correct code is case-insensitive and single-use",
+    "captcha can be disabled through sys_config and returns enabled=false without an image",
+    "admin generates unambiguous 12-char codes; count/expiry/note bounds and list summary validated",
+    "weak password, bad account and bad invite are rejected without creating a member or using the code",
+    "unknown invite code rolls the registration back entirely",
+    "registration logs in, stores BCrypt account, claims the invite and grants the welcome coupon",
+    "duplicate account is case-insensitive, and a used invite cannot register another account",
+    "two concurrent registrations with one invite yield exactly one member",
+    "login is case-insensitive; wrong password returns a business error (not 401); logout invalidates the token",
+    "per-account login attempts are limited (429 after 10 tries / 15 minutes)",
+    "expired invite is rejected and leaves no member row",
+    "admin member list exposes website accounts"
+  ],
+  "scope": "Local Docker MySQL/Redis. Captcha temporarily disabled if needed; simulated payment only."
+}

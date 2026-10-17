@@ -12,8 +12,11 @@ public class FoodMemberService {
  @Transactional public long login(String openid){
    int created=db.update("INSERT IGNORE INTO food_member(openid) VALUES(?)",openid);
    long id=db.queryForObject("SELECT id FROM food_member WHERE openid=?",Long.class,openid);
-   if(created==1) db.update("INSERT INTO food_coupon(member_id,title,amount,minimum,expires_at) VALUES(?,'新人见面礼',300,1200,DATE_ADD(NOW(),INTERVAL 30 DAY))",id);
+   if(created==1) welcome(id);
    return id;
+ }
+ public void welcome(long id){
+   db.update("INSERT INTO food_coupon(member_id,title,amount,minimum,expires_at) VALUES(?,'新人见面礼',300,1200,DATE_ADD(NOW(),INTERVAL 30 DAY))",id);
  }
  @Transactional public void checkin(long member){
    require(db.update("INSERT IGNORE INTO food_checkin(member_id,day) VALUES(?,CURRENT_DATE)",member)==1,"今天已经签到啦");
