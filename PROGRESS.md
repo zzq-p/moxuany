@@ -1,5 +1,19 @@
 # 点餐小程序进度存档
 
+## 2026-10-20 下午 代码格式、排队估算与监控端点
+
+三项优化，无数据库变更：
+
+- **格式化**：`com.ruoyi.food` 27 个文件用 google-java-format 重排（纯格式化提交，无语义变更）。最长行从 1231 字符降到 336，便于 review 与 blame。
+- **订单详情排队估算**：`FoodKitchen.attach` 不再调用 `queue(store)` 重算整店，改为 `estimate(store,id)`——单条 SQL 只取 6 列，lane 模拟走到目标订单即返回。实测厨房列表与详情返回的 `ahead/minutes/overdue` 完全一致；`getQueue` 的明细查询与 store join 不再发生在详情路径上。
+- **Actuator**：新增 `spring-boot-starter-actuator` + `micrometer-registry-prometheus`，只暴露 `health/info/metrics/prometheus`，`env` 等敏感端点保持拦截（实测 401）。`health` 关闭 show-details 并开启 liveness/readiness。SecurityConfig 放行方式与 swagger/druid 一致，生产 Nginx 不转发这些路径。
+
+复核结论：慢 SQL 日志**此前已配置**（`application-druid.yml` 的 `filter.stat`：`log-slow-sql=true`、`slow-sql-millis=1000`），本轮未重复添加。
+
+验证：`mvn compile`/`package` 通过；test-experience 5 组、test-integration 13 项通过；`/actuator/health`、`/actuator/metrics/http.server.requests`、`/actuator/prometheus` 均 200。
+
+注意：新增依赖后首次构建需要联网（已缓存到 `D:\java\maven-repo`，之后可继续离线 `-o`）。
+
 ## 2026-10-20 代码审查修复：限流口径、退款窗口、异常边界
 
 本轮为全量静态审查后的修复，未改动数据库结构，无迁移脚本；前后端与部署配置需一起更新。
