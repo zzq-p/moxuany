@@ -20,12 +20,20 @@ public class FoodSupport {
     private final JdbcTemplate db;
     public FoodSupport(StringRedisTemplate redis, ObjectMapper json, JdbcTemplate db) { this.redis=redis; this.json=json; this.db=db; }
     public static void require(boolean ok, String message) { if(!ok) throw new ServiceException(message); }
-    /** Nginx overwrites X-Real-IP with the peer address; the backend only binds to 127.0.0.1. */
-    public static String clientIp(HttpServletRequest request) {
+    @org.springframework.beans.factory.annotation.Value("${food.trust-proxy-header:false}") private boolean trustProxyHeader;
+    /**
+     * X-Real-IP is only trusted behind a reverse proxy that overwrites it
+     * (Nginx sets it to $remote_addr). Exposed or proxied by a dev server, the
+     * header is client-controlled and would let a caller bypass every IP limit,
+     * so it stays opt-in through food.trust-proxy-header.
+     */
+    public String clientIp(HttpServletRequest request) {
+        String remote=request.getRemoteAddr();
+        if(!trustProxyHeader) return remote;
         String ip=request.getHeader("X-Real-IP");
-        if(ip==null||ip.isBlank()) return request.getRemoteAddr();
+        if(ip==null||ip.isBlank()) return remote;
         ip=ip.trim();
-        return ip.matches("[0-9a-fA-F:.]{2,45}")?ip:request.getRemoteAddr();
+        return ip.matches("[0-9a-fA-F:.]{2,45}")?ip:remote;
     }
     public static long number(Map<String,Object> row,String key) { return ((Number)row.get(key)).longValue(); }
     public static String text(Map<String,Object> row,String key) { return Objects.toString(row.get(key),""); }
@@ -78,6 +86,14 @@ public class FoodSupport {
         Long n=redis.execute(new DefaultRedisScript<>("local n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],ARGV[1]); end; return n",Long.class),List.of("food:rate:"+key),Integer.toString(seconds));
         if(n==null || n>max) throw new ServiceException("操作频繁，请稍后重试",429);
     }
+    /** Read-only check so successful attempts are not counted against the caller. */
+    public void checkLimit(String key,int max) {
+        String value=redis.opsForValue().get("food:rate:"+key);
+        if(value==null) return;
+        long n;try{n=Long.parseLong(value);}catch(NumberFormatException e){return;}
+        if(n>=max) throw new ServiceException("操作频繁，请稍后重试",429);
+    }
+    public void clearLimit(String key) { redis.delete("food:rate:"+key); }
     public Object cache(String key,Supplier<Object> fetch) {
         try { String value=redis.opsForValue().get("food:cache:"+key); if(value!=null) return json.readValue(value,Object.class); }
         catch(Exception ignored) { /* Catalog remains available if Redis is unavailable. */ }

@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-04T09:09:20.700Z",
+  "date": "2026-10-20T08:13:13.653Z",
   "checks": [
     "signed expired and legacy unrevocable recovery credentials are rejected; new credentials expire within 30 days",
     "expired Redis session restores original demo account; no extra welcome coupon; tampered/member-swapped credentials rejected",

@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-05T04:42:39.410Z",
+  "date": "2026-10-20T08:06:50.457Z",
   "checks": [
     "all preparation-exit paths require COOK; kitchen, clerk completion, manager and platform permissions remain correct; cross-store access denied",
     "report and actual CSV totals reconcile for unpaid, cancelled, paid, discounted partial-refund and full-refund orders; merchant scope preserved",

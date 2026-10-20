@@ -67,6 +67,12 @@ if grep -qE '^FOOD_MOCK_PAYMENT_ENABLED=false' .env; then
   warn "FOOD_MOCK_PAYMENT_ENABLED=false，但项目尚未接入真实微信支付，"
   warn "下单后将无法完成支付。除非已自行实现真实支付，否则请保持 true。"
 fi
+# 限流按客户端 IP 计数。后端容器只被 Nginx 访问，不开启该开关时所有访客
+# 都会被算成同一个 IP，登录/注册/验证码的额度会被全站共用。
+if ! grep -qE '^FOOD_TRUST_PROXY_HEADER=true' .env; then
+  warn "FOOD_TRUST_PROXY_HEADER 未设为 true：后端会把 Nginx 的地址当成客户端 IP，"
+  warn "所有访客共用同一份限流额度，容易出现全站 429。使用本套 Nginx 时应设为 true。"
+fi
 [ -f backend/ruoyi-admin.jar ] || die "缺少 backend/ruoyi-admin.jar，请先在本机执行 deploy/local/build-and-pack.ps1"
 
 # 静态产物：网站前台在 /，管理端在 /admin/，两套都必须有

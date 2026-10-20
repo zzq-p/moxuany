@@ -229,6 +229,7 @@ vi .env
 | `FOOD_WEB_LOGIN_ENABLED` | 网站账号登录开关，保持 `true` |
 | `FOOD_MOCK_PAYMENT_ENABLED` | 项目尚未接入真实支付，保持 `true`，否则下单后无法完成支付 |
 | `WECHAT_APPID` / `WECHAT_SECRET` | 小程序微信登录需要；不填时网站账号登录仍可正常使用 |
+| `FOOD_TRUST_PROXY_HEADER` | 用本套 Nginx 时必须为 `true`，否则后端把 Nginx 地址当成访客 IP，登录/注册/验证码额度会被全站共用。若把 8080 直接暴露公网，必须改回 `false` |
 
 数据库密码和 `TOKEN_SECRET` 脚本已经随机生成好了，不用改。
 

@@ -13,7 +13,14 @@ public class FoodRefunds {
  public record Selection(long itemId,int quantity) {}
  public record Request(String reason,String kind,List<Selection> items,List<String> evidenceIds) {}
  private Map<String,Object> owned(long member,String id,boolean lock){var rows=db.queryForList("SELECT *,completed_at>=DATE_SUB(NOW(),INTERVAL 24 HOUR) within_window FROM food_order WHERE id=? AND member_id=?"+(lock?" FOR UPDATE":""),id,member);require(!rows.isEmpty(),"订单不存在");return rows.get(0);}
- private void eligible(Map<String,Object> o){require(Set.of("PENDING","PREPARING","WAITING_DELIVERY","READY","DELIVERING","COMPLETED").contains(text(o,"status")),"当前订单不能申请退款");require(!"COMPLETED".equals(o.get("status"))||number(o,"within_window")==1,"订单完成超过24小时，请联系平台客服");}
+ private void eligible(Map<String,Object> o){
+  require(Set.of("PENDING","PREPARING","WAITING_DELIVERY","READY","DELIVERING","COMPLETED").contains(text(o,"status")),"当前订单不能申请退款");
+  // within_window is NULL when completed_at is missing (legacy rows); null must not reach number().
+  if("COMPLETED".equals(o.get("status"))){
+   Object window=o.get("within_window");
+   require(window instanceof Number && ((Number)window).longValue()==1,"订单完成超过24小时，请联系平台客服");
+  }
+ }
  // Cumulative integer allocation preserves cents across coupons and repeated partial refunds.
  public List<Map<String,Object>> refundable(Map<String,Object> o){
   var items=db.queryForList("SELECT * FROM food_order_item WHERE order_id=? ORDER BY id",o.get("id"));long start=0,subtotal=number(o,"subtotal"),net=subtotal-number(o,"discount");
@@ -26,6 +33,7 @@ public class FoodRefunds {
   long subtotal=number(o,"subtotal"),net=subtotal-number(o,"discount");List<Map<String,Object>> lines=new ArrayList<>();long amount=0;
   for(var s:selected.entrySet()){var i=items.stream().filter(v->number(v,"id")==s.getKey()).findFirst().orElseThrow(()->new com.ruoyi.common.exception.ServiceException("退款菜品不属于该订单"));long q=s.getValue();require(q<=number(i,"remaining_quantity"),"退款数量超过剩余可退数量");long start=number(i,"allocation_start")+number(i,"price")*number(i,"refunded_quantity");long value=subtotal==0?0:((start+number(i,"price")*q)*net/subtotal-start*net/subtotal);amount+=value;lines.add(Map.of("itemId",s.getKey(),"name",i.get("name"),"quantity",q,"amount",value));}
   boolean full=items.stream().allMatch(i->selected.getOrDefault(number(i,"id"),0)==number(i,"remaining_quantity"));if(full){kind="FULL";amount=number(o,"total")-number(o,"refunded_amount");}
+  // amount may be 0 for a fully discounted order; merchant out-of-stock cancellation still has to go through.
   require(amount>=0&&amount<=number(o,"total")-number(o,"refunded_amount"),"可退金额异常");return Map.of("kind",kind,"amount",amount,"items",lines);
  }
  public Map<String,Object> quote(long member,String id,Request request){return quote(owned(member,id,false),request);}

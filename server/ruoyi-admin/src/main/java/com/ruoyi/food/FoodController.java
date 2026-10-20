@@ -22,16 +22,27 @@ public class FoodController {
  @Value("${food.secret:}") private String secret;
  public FoodController(JdbcTemplate db,FoodSupport support,FoodOrders orders,FoodMemberService members,FoodRefunds refunds,FoodReviews reviews,FoodWebAuth webAuth){this.reviews=reviews;this.refunds=refunds;this.db=db;this.support=support;this.orders=orders;this.members=members;this.webAuth=webAuth;}
  @GetMapping("/config") public AjaxResult config(){return AjaxResult.success(Map.of("demoEnabled",demo,"brand","青禾校园","webLoginEnabled",webAuth.enabled(),"captchaEnabled",webAuth.captchaEnabled(),"registrationRequiresInvite",true,"mockPayment",mockPayment));}
- @GetMapping("/captcha") public AjaxResult captcha(HttpServletRequest request){support.limit("captcha:"+clientIp(request),30,60);return AjaxResult.success(webAuth.captcha());}
- @Transactional @PostMapping("/register") public AjaxResult register(@RequestBody Map<String,String> input,HttpServletRequest request){support.limit("register:"+clientIp(request),10,3600);return AjaxResult.success(webAuth.register(input));}
+ @GetMapping("/captcha") public AjaxResult captcha(HttpServletRequest request){support.limit("captcha:"+support.clientIp(request),30,60);return AjaxResult.success(webAuth.captcha());}
+ @Transactional @PostMapping("/register") public AjaxResult register(@RequestBody Map<String,String> input,HttpServletRequest request){support.limit("register:"+support.clientIp(request),10,3600);return AjaxResult.success(webAuth.register(input));}
  @Transactional @PostMapping("/logout") public AjaxResult logout(HttpServletRequest request,@RequestBody(required=false) Map<String,String> body){support.logout(request,demo&&body!=null?body.get("demoCredential"):null);return AjaxResult.success();}
  @Transactional @PostMapping("/login") public AjaxResult login(@RequestBody Map<String,String> input,HttpServletRequest request){
-   support.limit("login:"+clientIp(request),30,60);
+   support.limit("login:"+support.clientIp(request),30,60);
    String openid;
    if("web".equals(input.get("mode"))){
      String account=Objects.toString(input.get("account"),"").trim().toLowerCase(Locale.ROOT);
-     if(account.matches("[a-z0-9_]{4,32}"))support.limit("weblogin:"+account,10,900);
-     return AjaxResult.success(webAuth.login(input));
+     // Failed attempts lock the account; a successful sign-in clears the counter.
+     // Counting every attempt (successes included) locked real users out after 10 logins per 15 minutes.
+     if(!account.matches("[a-z0-9_]{4,32}"))return AjaxResult.success(webAuth.login(input));
+     String accountKey="weblogin:"+account;
+     support.checkLimit(accountKey,10);
+     try{
+       Map<String,Object> result=webAuth.login(input);
+       support.clearLimit(accountKey);
+       return AjaxResult.success(result);
+     }catch(RuntimeException e){
+       support.limit(accountKey,10,900);
+       throw e;
+     }
    }
    if("demo".equals(input.get("mode"))){
      require(demo,"演示登录未启用");

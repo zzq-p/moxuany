@@ -1,6 +1,7 @@
 <template><view>
  <view v-if="order.refunded_amount" class="card">已退款 ¥{{money(order.refunded_amount)}} · 剩余实付 ¥{{money(order.total-order.refunded_amount)}}</view>
  <view v-if="order.refunds?.length" class="card"><view class="bold">售后记录</view><view v-for="r in order.refunds" :key="r.id" class="stack small" style="margin-top:24rpx"><text>{{labels[r.status]}} · {{r.kind==='ITEMS'?'部分退款':'整单剩余退款'}} ¥{{money(r.amount)}}</text><text v-for="i in r.items" :key="i.item_id">{{i.name}} ×{{i.quantity}}</text><text>原因：{{r.reason}}</text><view class="row"><button v-for="e in r.evidenceIds" :key="e" size="mini" @click="preview(e)">查看凭证</button></view><text v-if="r.reply">商家回复：{{r.reply}}</text><text v-if="r.status==='APPROVED'">{{r.restocked?'未制作餐品库存已退回':'已制作餐品未回补库存'}}</text></view></view>
+ <view v-if="refundExpired" class="card stack"><view class="bold">售后退款</view><text class="tiny muted">订单完成已超过 24 小时，自助退款通道已关闭。请联系商家或平台客服处理。</text></view>
  <view v-if="eligible" class="card stack"><view class="bold">售后退款</view><picker :range="['整单剩余退款','按菜品退款']" @change="kind=Number($event.detail.value)?'ITEMS':'FULL'"><view class="field">{{kind==='FULL'?'整单剩余退款':'按菜品退款'}} ›</view></picker>
  <template v-if="kind==='ITEMS'"><view v-for="p in order.items.filter(i=>i.quantity>i.refunded_quantity)" :key="p.id" class="between small"><view>{{p.name}}<view class="tiny muted">{{p.option_text}} · 可退 {{p.quantity-p.refunded_quantity}} 份</view></view><view class="counter"><text class="counter-btn" @click="quantity(p,-1)">−</text><text>{{selected[p.id]||0}}</text><text class="counter-btn" @click="quantity(p,1)">+</text></view></view></template>
  <text class="tiny muted">按优惠后实付金额计算。退完所有剩余菜品时一并退还配送费；审核期间暂停订单流转。</text><textarea v-model="reason" class="field" maxlength="500" placeholder="填写2至500字原因，例如漏餐或错餐"/>
@@ -12,10 +13,19 @@ import {ref,computed,onBeforeUnmount} from 'vue';import {captureSession} from '.
 let active=true
 onBeforeUnmount(()=>{active=false;previewImage.value='';evidenceIds.value=[];reason.value='';selected.value={}})
 function operation(){const session=captureSession(),id=props.order.id;return {...session,id,current:()=>active&&id===props.order.id&&session.current(),assertCurrent(){session.assertCurrent();if(!active||id!==props.order.id)throw Error('页面已关闭，请重新操作')}}}
-const eligible=computed(()=>['PENDING','PREPARING','WAITING_DELIVERY','READY','DELIVERING','COMPLETED'].includes(props.order.status)&&props.order.refund_status!=='REQUESTED')
+const REFUND_WINDOW=24*60*60*1000
+const eligible=computed(()=>{
+ if(!['PENDING','PREPARING','WAITING_DELIVERY','READY','DELIVERING','COMPLETED'].includes(props.order.status))return false
+ if(props.order.refund_status==='REQUESTED')return false
+ if(props.order.status!=='COMPLETED')return true
+ // 服务端只接受完成 24 小时内的自助退款，超过后不再展示表单，避免用户填完才被拒绝。
+ const done=Date.parse(String(props.order.completed_at||'').replace(' ','T')+'+08:00')
+ return Number.isFinite(done)&&Date.now()-done<REFUND_WINDOW
+})
+const refundExpired=computed(()=>props.order.status==='COMPLETED'&&props.order.refund_status!=='REQUESTED'&&!eligible.value)
 function quantity(p,delta){selected.value[p.id]=Math.max(0,Math.min(p.quantity-p.refunded_quantity,(selected.value[p.id]||0)+delta))}
 async function preview(id){const session=operation();try{const result=await session.request('/evidence/'+id);session.assertCurrent();previewImage.value=result}catch{}}
 async function upload(){if(uploading.value||busy.value)return;uploading.value=true;const session=operation();try{const result=await new Promise((resolve,reject)=>uni.chooseImage({count:1,sizeType:['compressed'],success:resolve,fail:reject}));session.assertCurrent();const r=await uploadEvidence(session.id,result.tempFilePaths[0],session.token);session.assertCurrent();evidenceIds.value.push(r.id);toast('凭证已上传')}catch(e){if(session.current()&&e.message)toast(e.message)}finally{uploading.value=false}}
-async function submit(){if(busy.value||uploading.value)return;if(reason.value.trim().length<2)return toast('请填写至少2字退款原因');busy.value=true;const session=operation();try{const body={kind:kind.value,reason:reason.value,items:Object.entries(selected.value).filter(([,q])=>q>0).map(([id,q])=>({itemId:Number(id),quantity:q})),evidenceIds:evidenceIds.value};const quote=await session.request('/orders/'+session.id+'/refund-quote','POST',body);session.assertCurrent();if(!await confirm('申请'+(quote.kind==='FULL'?'整单剩余':'部分')+'模拟退款 ¥'+money(quote.amount)+'？审核期间暂停订单流转，不发生真实资金转账。'))return;session.assertCurrent();await session.request('/orders/'+session.id+'/refund','POST',body);session.assertCurrent();reason.value='';selected.value={};evidenceIds.value=[];emit('changed');toast('退款申请已提交')}catch(e){if(session.current())toast(e.message)}finally{busy.value=false}}
+async function submit(){if(busy.value||uploading.value)return;if(reason.value.trim().length<2)return toast('请填写至少2字退款原因');const items=Object.entries(selected.value).filter(([,q])=>q>0).map(([id,q])=>({itemId:Number(id),quantity:q}));if(kind.value==='ITEMS'&&!items.length)return toast('请选择要退款的菜品和数量');busy.value=true;const session=operation();try{const body={kind:kind.value,reason:reason.value,items,evidenceIds:evidenceIds.value};const quote=await session.request('/orders/'+session.id+'/refund-quote','POST',body);session.assertCurrent();if(!await confirm('申请'+(quote.kind==='FULL'?'整单剩余':'部分')+'模拟退款 ¥'+money(quote.amount)+'？审核期间暂停订单流转，不发生真实资金转账。'))return;session.assertCurrent();await session.request('/orders/'+session.id+'/refund','POST',body);session.assertCurrent();reason.value='';selected.value={};evidenceIds.value=[];emit('changed');toast('退款申请已提交')}catch(e){if(session.current())toast(e.message)}finally{busy.value=false}}
 </script>
 <style scoped>.preview{position:fixed;inset:0;background:#000d;z-index:99;display:flex;align-items:center;justify-content:center;flex-direction:column;color:white}.preview image{width:95vw;height:80vh}.field{width:100%;box-sizing:border-box}.stack{gap:20rpx}</style>

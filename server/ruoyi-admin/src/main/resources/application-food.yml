@@ -38,5 +38,7 @@ food:
   secret: ${WECHAT_SECRET:}
   subscriptions-enabled: ${FOOD_SUBSCRIPTIONS_ENABLED:false}
   message-environment: ${FOOD_MESSAGE_ENVIRONMENT:formal}
+  # 只有部署在会覆盖 X-Real-IP 的反向代理后面时才设为 true；否则该请求头可被伪造以绕过限流。
+  trust-proxy-header: ${FOOD_TRUST_PROXY_HEADER:false}
 
   baidu-map-ak: ${BAIDU_MAP_AK:}

@@ -1,5 +1,22 @@
 # 点餐小程序进度存档
 
+## 2026-10-20 代码审查修复：限流口径、退款窗口、异常边界
+
+本轮为全量静态审查后的修复，未改动数据库结构，无迁移脚本；前后端与部署配置需一起更新。
+
+已修复：
+
+- **登录限流口径**：`FoodController.login` 的账号级限制从"每次尝试都计数"改为"失败才计数、成功清零"（新增 `FoodSupport.checkLimit/clearLimit`）。此前同一账号 15 分钟内登录满 10 次（含成功）就会被 429 锁住。
+- **X-Real-IP 改为显式信任**：新增 `food.trust-proxy-header`（默认 `false`）。非反向代理场景下该请求头可被伪造以绕过全部 IP 限流。生产 `.env` 与 `compose.prod.yml` 已写入 `FOOD_TRUST_PROXY_HEADER=true`，`deploy.sh` 增加缺失告警，`deploy/README.md` 补充变量说明。
+- **小程序退款入口**：`AfterSale.vue` 按后端规则补上"完成 24 小时内"判断，超期改为提示文案；"按菜品退款"未选数量时前端直接提示，不再等后端拒绝。
+- **店铺页竞态**：`store/index.vue` 的 `load()` 增加请求版本号，`onHide` 时作废在途响应，避免快速切换店铺时旧数据覆盖。
+- **异常边界**（避免 500）：商家订单列表补 status 白名单；预约库存并发首建转为"已被他人修改"提示；预约库存/规格加料/分时售卖在菜品不存在时返回可读错误；`FoodRefunds.eligible` 对缺失 `completed_at` 的历史行不再触发空指针；厨房容量/制作时长兜底不小于 1；员工调整与分时售卖的 `version`/`active` 非数字参数改为业务错误。
+- 商品规格加料接口的重复 `store_id` 查询合并为一次。
+
+验证：Java `mvn -o -DskipTests compile` 通过；管理端与微信小程序均构建成功；`test-location`、`test-session-boundaries`、`test-order-ui`、`test-checkout-regressions`、`test-csv`、`test-paged-catalog` 全部 PASS。Docker 未启动，依赖数据库的集成测试未执行。
+
+重点关注：升级部署时若沿用旧 `.env`（不含 `FOOD_TRUST_PROXY_HEADER`），后端会把 Nginx 地址当作访客 IP，全站共用一份限流额度，务必确认该值为 `true`。
+
 ## 2026-10-17 网站注册登录、邀请码、/admin/ 迁移与生产部署包
 
 按已确认方向完成“公开网站”：域名根路径 `/` 即点餐前台，管理后台迁到同域 `/admin/`；顾客用“用户名 + 密码 + 图片验证码 + 一次性邀请码”注册，登录按 IP 与账号限流。模拟支付与演示登录解耦，`FOOD_DEMO_ENABLED=false` 时网站仍可下单并模拟支付。服务器尚未购买，本轮在本机完成实现与验收，产出可直接上传的部署包。

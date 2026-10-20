@@ -1,5 +1,5 @@
 {
-  "date": "2026-09-30T11:20:27.163Z",
+  "date": "2026-10-20T08:12:07.717Z",
   "checks": [
     "server option pricing, mandatory/foreign spec validation and full rollback; merchant option scope",
     "12 concurrent repeated submits create one order; scoped weak-network lookup; 8 repeated cancellations restore stock once",
@@ -8,7 +8,7 @@
     "future reservation slots, early preparation blocked, due alerts, expired slots rejected and split meal periods",
     "rider roles, two-rider claim race, customer details after claim only, ownership, safe account disabling and idempotent delivery",
     "report totals reconcile to ledger, merchant export isolation, rider denied and date range limit",
-    "120 expired orders drained in 5363ms; base/spec/addon reservations all released",
+    "120 expired orders drained in 5251ms; base/spec/addon reservations all released",
     "20 simultaneous purchases compete for 3 spec units without overselling"
   ],
   "scope": "Local simulated-payment integration with isolated fixtures; throughput figures are not a production capacity guarantee."

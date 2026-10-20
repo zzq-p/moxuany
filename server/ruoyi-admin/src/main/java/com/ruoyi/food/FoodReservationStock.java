@@ -22,13 +22,13 @@ public class FoodReservationStock {
  }
  @Transactional public void save(long product,String value,List<Map<String,Object>> rows){
   var day=date(value);var today=LocalDate.now(FoodReservations.ZONE);require(!day.isBefore(today)&&day.isBefore(today.plusDays(31)),"只能配置今天起31天内的预约库存");
-  db.queryForMap("SELECT id FROM food_product WHERE id=? FOR UPDATE",product);
+  require(!db.queryForList("SELECT id FROM food_product WHERE id=? FOR UPDATE",product).isEmpty(),"菜品不存在");
   require(rows!=null&&!rows.isEmpty()&&rows.size()<=31,"请填写预约库存");Set<Long> seen=new HashSet<>();
   for(var r:rows){long option,capacity,version;try{option=Long.parseLong(text(r,"option_id"));capacity=Long.parseLong(text(r,"capacity"));version=Long.parseLong(text(r,"version"));}catch(Exception e){throw new com.ruoyi.common.exception.ServiceException("库存参数不合法");}
    require(option>=0&&seen.add(option)&&capacity>=0&&capacity<=1000000&&version>=-1,"库存参数不合法");
    require(option==0||db.queryForObject("SELECT COUNT(*) FROM food_product_option WHERE id=? AND product_id=?",Integer.class,option,product)==1,"规格不属于当前菜品");
    var old=db.queryForList("SELECT * FROM food_reservation_stock WHERE product_id=? AND stock_date=? AND option_id=? FOR UPDATE",product,day,option);
-   if(old.isEmpty()){require(version==-1,"库存已更新，请刷新");db.update("INSERT INTO food_reservation_stock(product_id,stock_date,option_id,capacity) VALUES(?,?,?,?)",product,day,option,capacity);}
+   if(old.isEmpty()){require(version==-1,"库存已更新，请刷新");try{db.update("INSERT INTO food_reservation_stock(product_id,stock_date,option_id,capacity) VALUES(?,?,?,?)",product,day,option,capacity);}catch(org.springframework.dao.DuplicateKeyException e){throw new com.ruoyi.common.exception.ServiceException("库存已被他人修改，请刷新后重试");}}
    else{require(number(old.get(0),"version")==version,"库存已更新，请刷新");require(capacity>=number(old.get(0),"used"),"总配额不能少于已占用数量");db.update("UPDATE food_reservation_stock SET capacity=?,version=version+1 WHERE product_id=? AND stock_date=? AND option_id=?",capacity,product,day,option);}
   }
  }

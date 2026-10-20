@@ -16,21 +16,24 @@ import static com.ruoyi.food.FoodSupport.*;
 public class FoodExperienceController {
  private final JdbcTemplate db;private final FoodSupport support;private final FoodScope scope;private final FoodKitchen kitchen;private final FoodEvidence evidence;private final FoodMerchantAccounts accounts;private final FoodOptions options;private final FoodMessages messages;
  public FoodExperienceController(JdbcTemplate db,FoodSupport support,FoodScope scope,FoodKitchen kitchen,FoodEvidence evidence,FoodMerchantAccounts accounts,FoodOptions options,FoodMessages messages){this.db=db;this.support=support;this.scope=scope;this.kitchen=kitchen;this.evidence=evidence;this.accounts=accounts;this.options=options;this.messages=messages;}
+ // Missing or non-numeric body fields used to surface as a raw NumberFormatException (HTTP 500).
+ private static long longValue(Object value,String message){try{return Long.parseLong(java.util.Objects.toString(value,"").trim());}catch(NumberFormatException e){throw new com.ruoyi.common.exception.ServiceException(message);}}
+ private static int intValue(Object value,String message){try{return Integer.parseInt(java.util.Objects.toString(value,"").trim());}catch(NumberFormatException e){throw new com.ruoyi.common.exception.ServiceException(message);}}
  @PreAuthorize("@ss.hasPermi('food:manage')") @GetMapping("/food/admin/kitchen") public AjaxResult kitchen(@RequestParam long storeId){scope.store(storeId);return AjaxResult.success(kitchen.queue(storeId).stream().map(FoodOrders::merchantView).toList());}
  @PreAuthorize("@ss.hasPermi('food:manage')") @GetMapping("/food/admin/staff") public AjaxResult staff(@RequestParam long storeId){scope.permit(storeId,"STAFF");return AjaxResult.success(db.queryForList("SELECT su.user_id,su.staff_role,su.active,u.user_name,u.nick_name FROM food_store_user su JOIN sys_user u ON u.user_id=su.user_id WHERE su.store_id=? ORDER BY su.user_id",storeId));}
  @PreAuthorize("@ss.hasPermi('food:manage')") @PostMapping("/food/admin/staff") public AjaxResult staff(@RequestBody Map<String,Object> b){accounts.createStaff(Long.parseLong(text(b,"storeId")),text(b,"username"),text(b,"password"),text(b,"name"),text(b,"role"));return AjaxResult.success();}
- @PreAuthorize("@ss.hasPermi('food:manage')") @PostMapping("/food/admin/staff/{user}") public AjaxResult staff(@PathVariable long user,@RequestBody Map<String,Object> b){accounts.updateStaff(Long.parseLong(text(b,"storeId")),user,text(b,"role"),Integer.parseInt(text(b,"active")));return AjaxResult.success();}
+ @PreAuthorize("@ss.hasPermi('food:manage')") @PostMapping("/food/admin/staff/{user}") public AjaxResult staff(@PathVariable long user,@RequestBody Map<String,Object> b){accounts.updateStaff(longValue(b.get("storeId"),"请选择商家"),user,text(b,"role"),intValue(b.get("active"),"请选择启用状态"));return AjaxResult.success();}
  @PreAuthorize("@ss.hasPermi('food:manage')") @GetMapping("/food/admin/staff-audit") public AjaxResult audit(@RequestParam long storeId,@RequestParam(defaultValue="1") int page){scope.permit(storeId,"STAFF");require(page>=1&&page<=10000,"页码无效");return AjaxResult.success(db.queryForList("SELECT * FROM food_staff_audit WHERE store_id=? ORDER BY id DESC LIMIT 30 OFFSET ?",storeId,(page-1)*30));}
  @PreAuthorize("@ss.hasPermi('food:manage')") @PostMapping("/food/admin/products/{id}/selling") @Log(title="菜品分时与售罄",businessType=BusinessType.UPDATE)
  public AjaxResult selling(@PathVariable long id,@RequestBody Map<String,Object> b){
-  long store=db.queryForObject("SELECT store_id FROM food_product WHERE id=?",Long.class,id);scope.permit(store,"CATALOG");
+  var productStores=db.queryForList("SELECT store_id FROM food_product WHERE id=?",Long.class,id);require(!productStores.isEmpty(),"菜品不存在，请刷新列表");long store=productStores.get(0);scope.permit(store,"CATALOG");
   String periods=text(b,"periods").replace(" ","");require(periods.length()<=200,"售卖时段过长");FoodBusinessRules.validatePeriods(periods);
   boolean sold=Boolean.TRUE.equals(b.get("soldOut"));java.time.LocalDateTime until=null;
   if(sold){
    try{if(!text(b,"until").isBlank())until=FoodSelling.time(b.get("until"));}catch(Exception e){throw new com.ruoyi.common.exception.ServiceException("恢复时间格式不正确");}
    require(until==null||until.isAfter(FoodSelling.now()),"自动恢复时间必须晚于现在");
   }
-  require(db.update("UPDATE food_product SET sale_periods=?,sold_out=?,sold_out_until=?,version=version+1 WHERE id=? AND version=?",periods,sold?1:0,until,id,Long.parseLong(text(b,"version")))==1,"菜品已变化，请刷新后再操作");
+  require(db.update("UPDATE food_product SET sale_periods=?,sold_out=?,sold_out_until=?,version=version+1 WHERE id=? AND version=?",periods,sold?1:0,until,id,longValue(b.get("version"),"菜品数据已变化，请刷新后重试"))==1,"菜品已变化，请刷新后再操作");
   scope.audit(store,"SELLING",Long.toString(id),sold?"设为售罄，恢复时间："+Objects.toString(until,"手动恢复"):"售卖时段："+periods);support.invalidate(store);return AjaxResult.success();
  }
  @Anonymous @PostMapping("/food/app/orders/{id}/evidence") public AjaxResult upload(@PathVariable String id,@RequestParam MultipartFile file,HttpServletRequest r){long member=support.member(r);support.limit("evidence:"+member,12,3600);return AjaxResult.success(Map.of("id",evidence.save(member,id,file)));}

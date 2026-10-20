@@ -13,7 +13,8 @@ public class FoodKitchen {
  public FoodKitchen(JdbcTemplate db){this.db=db;}
  public List<Map<String,Object>> queue(long store){
   var config=db.queryForMap("SELECT kitchen_capacity,cooking_minutes FROM food_store WHERE id=?",store);
-  int capacity=(int)number(config,"kitchen_capacity"),minutes=(int)number(config,"cooking_minutes");
+  // A 0/negative capacity would empty the lane queue and throw on the next remove().
+  int capacity=Math.max(1,(int)number(config,"kitchen_capacity")),minutes=Math.max(1,(int)number(config,"cooking_minutes"));
   var now=FoodSelling.now();var lanes=new PriorityQueue<LocalDateTime>();for(int i=0;i<capacity;i++)lanes.add(now);
   var rows=db.queryForList("SELECT o.*,s.name store_name FROM food_order o JOIN food_store s ON s.id=o.store_id WHERE o.store_id=? AND o.status IN ('PENDING','PREPARING') AND o.refund_status<>'REQUESTED' ORDER BY (o.status='PREPARING') DESC,COALESCE(o.prepare_at,o.paid_at),o.paid_at,o.id",store);
   Map<String,List<Map<String,Object>>> items=new HashMap<>();

@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-17T13:21:27.997Z",
+  "date": "2026-10-20T08:11:00.757Z",
   "checks": [
     "config exposes web login, invite-only registration and mock payment",
     "captcha is required, wrong/expired codes fail, correct code is case-insensitive and single-use",

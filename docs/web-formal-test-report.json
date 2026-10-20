@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-17T13:26:56.523Z",
+  "date": "2026-10-20T08:15:00.018Z",
   "checks": [
     "formal mode: demo login is closed while website login and simulated payment stay enabled",
     "invitation registration and automatic login succeed with demo mode off",

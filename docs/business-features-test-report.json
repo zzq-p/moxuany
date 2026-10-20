@@ -1,5 +1,5 @@
 {
-  "date": "2026-09-29T06:08:44.390Z",
+  "date": "2026-10-20T08:12:46.775Z",
   "checks": [
     "merchant/store pagination: 23 fixtures → 20 + 3, no duplicates, tenant isolation and authentication",
     "product pagination/filtering, literal wildcard search, product-to-store search, global distance order, compact info and invalid-query checks",
