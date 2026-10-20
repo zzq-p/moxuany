@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-20T08:12:32.526Z",
+  "date": "2026-10-20T09:25:49.591Z",
   "checks": [
     "employee roles: backend permissions, no escalation, disabled live session denied, last manager protected and audit recorded; kitchen queue order/estimates/overdue and clerk-to-kitchen workflow",
     "selling: sold-out checkout rejection, version conflict, automatic recovery and time-window enforcement",
