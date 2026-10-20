@@ -54,6 +54,18 @@
             <artifactId>ruoyi-generator</artifactId>
         </dependency>
 
+        <!-- 运维可观测性：仅暴露 health/info/metrics/prometheus。
+             端点是否对外可见由 management.endpoints.web.exposure.include 控制，
+             不要在 include 中加入 env/beans/configprops/heapdump。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
     </dependencies>
 
     <build>

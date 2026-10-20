@@ -42,3 +42,20 @@ food:
   trust-proxy-header: ${FOOD_TRUST_PROXY_HEADER:false}
 
   baidu-map-ak: ${BAIDU_MAP_AK:}
+
+# 运维可观测性。只暴露只读指标端点；env / beans / configprops / heapdump
+# 一律不加入 include，避免泄露连接串与密钥。
+# 生产环境由 Nginx 只代理 /prod-api/，这些路径不对外可达。
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: moxuany

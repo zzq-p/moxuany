@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-20T08:10:43.887Z",
+  "date": "2026-10-20T09:26:31.869Z",
   "checks": [
     "anonymous requests cannot access private orders or administration",
     "RuoYi administrator sees all stores",
@@ -19,31 +19,13 @@
     "requests": 100,
     "stock": 9,
     "success": 9,
-    "elapsedMs": 452
+    "elapsedMs": 679
   },
   "catalog": {
     "requests": 500,
     "concurrency": 50,
-    "rps": 1363,
-    "p95Ms": 52
+    "rps": 675,
+    "p95Ms": 113
   },
-  "limitations": "Local development smoke/load check, not a production capacity guarantee.",
-  "extendedChecks": [
-    "platform batch store import persists correctly",
-    "merchant cannot read or mutate another store order, including direct IDs",
-    "concurrent points redemption cannot overdraw balance",
-    "customer feedback and administrator reply complete a round trip",
-    "scheduled expiry releases reserved stock and coupon automatically"
-  ],
-  "uploadCheck": {
-    "passed": true,
-    "path": "/profile/upload/2026/10/20/upload-verification_20261020161404A002.jpg",
-    "verified": [
-      "authenticated merchant upload",
-      "API static image",
-      "H5 image proxy",
-      "admin image proxy"
-    ],
-    "date": "2026-10-20T08:14:08.064Z"
-  }
+  "limitations": "Local development smoke/load check, not a production capacity guarantee."
 }

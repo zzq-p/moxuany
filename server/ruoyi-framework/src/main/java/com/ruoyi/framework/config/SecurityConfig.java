@@ -104,6 +104,9 @@ public class SecurityConfig
                     // 静态资源，可匿名访问
                     .requestMatchers(HttpMethod.GET, "/", "/*.html", "/**.html", "/**.css", "/**.js", "/profile/**").permitAll()
                     .requestMatchers("/swagger-ui.html", "/v3/api-docs/**", "/swagger-ui/**", "/druid/**").permitAll()
+                    // 运维指标：只放行只读端点，且应用侧已限定 include 范围。
+                    // 生产由 Nginx 只代理 /prod-api/，这些路径不会暴露到公网。
+                    .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info", "/actuator/metrics/**", "/actuator/prometheus").permitAll()
                     // 除上面外的所有请求全部需要鉴权认证
                     .anyRequest().authenticated();
             })
